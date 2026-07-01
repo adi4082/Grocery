@@ -1,0 +1,59 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile with registration details, role, wallet and metadata",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Auth UID" },
+        "email": { "type": "string", "description": "Email address" },
+        "name": { "type": "string", "description": "Full name" },
+        "phone": { "type": "string", "description": "Mobile number" },
+        "role": { "type": "string", "description": "Access role" },
+        "walletBalance": { "type": "number", "description": "Cashback wallet balance" },
+        "loyaltyPoints": { "type": "number", "description": "Reward loyalty points" },
+        "referralCode": { "type": "string", "description": "Personal referral code" },
+        "referredBy": { "type": "string", "description": "Referrer code if any" },
+        "recentlyViewed": { "type": "array", "description": "IDs of recently viewed products" },
+        "customerId": { "type": "string", "description": "Unique Customer ID like QN000001" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Account registration date" },
+        "lastLogin": { "type": "string", "format": "date-time", "description": "Last authenticated timestamp" },
+        "status": { "type": "string", "description": "Active or Blocked state" },
+        "orderCount": { "type": "number", "description": "Total number of completed orders" },
+        "photoUrl": { "type": "string", "description": "Profile picture URL" },
+        "savedProducts": { "type": "array", "description": "IDs of wishlist/saved items" }
+      },
+      "required": ["uid", "name", "phone", "role", "walletBalance", "loyaltyPoints", "referralCode", "customerId", "createdAt", "status", "orderCount"]
+    },
+    "Address": {
+      "title": "Address",
+      "description": "Structured customer delivery address",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Address unique identifier" },
+        "type": { "type": "string", "description": "Home, Work, or Other" },
+        "houseFlat": { "type": "string", "description": "House or Flat number" },
+        "buildingName": { "type": "string", "description": "Apartment or Building name" },
+        "streetArea": { "type": "string", "description": "Street, colony, or local area" },
+        "landmark": { "type": "string", "description": "Nearby landmark" },
+        "city": { "type": "string", "description": "City of delivery" },
+        "state": { "type": "string", "description": "State of delivery" },
+        "pinCode": { "type": "string", "description": "Postal index PIN code" },
+        "isDefault": { "type": "boolean", "description": "Whether this is the default address" },
+        "latitude": { "type": "number", "description": "GPS coordinate latitude" },
+        "longitude": { "type": "number", "description": "GPS coordinate longitude" }
+      },
+      "required": ["id", "type", "houseFlat", "streetArea", "city", "state", "pinCode", "isDefault"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles collection indexed by Auth UID"
+    },
+    "/users/{userId}/addresses/{addressId}": {
+      "schema": "Address",
+      "description": "Subcollection of structured delivery addresses for each user"
+    }
+  }
+}

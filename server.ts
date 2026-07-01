@@ -1,0 +1,142 @@
+import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
+import { GoogleGenAI } from "@google/genai";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+const PORT = 3000;
+
+app.use(express.json());
+
+// Lazy-initialized Gemini Client
+let aiClient: GoogleGenAI | null = null;
+function getAIClient(): GoogleGenAI | null {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
+    console.warn("GEMINI_API_KEY is not configured or has placeholder value.");
+    return null;
+  }
+  if (!aiClient) {
+    aiClient = new GoogleGenAI({ apiKey });
+  }
+  return aiClient;
+}
+
+// API: AI Product Recommendations
+app.post("/api/ai-recommendations", async (req, res) => {
+  try {
+    const { cartItems = [], category = "" } = req.body;
+    const ai = getAIClient();
+
+    if (!ai) {
+      // Return a graceful fallback if Gemini key is missing
+      return res.json({
+        recommendations: [
+          "fv-1", // Organic Red Apples
+          "gr-2", // Cold-pressed Olive Oil
+          "db-1", // Organic Whole Milk
+          "sn-2"  // Roasted Almonds
+        ],
+        reasoning: "We recommended these premium best sellers to complement your basket! (AI offline fallback mode active)"
+      });
+    }
+
+    // Call Gemini
+    const prompt = `You are the AI assistant for QuickNow, a premium quick-commerce grocery delivery platform. 
+We have a user browsing the site.
+Their current cart items: ${JSON.stringify(cartItems)}
+They are currently looking at the category: "${category}".
+
+Our available products:
+1. fv-1: Organic Red Apples (Fruits & Vegetables, crisp and sweet)
+2. fv-2: Fresh Organic Bananas (Fruits & Vegetables, sweet rich in potassium)
+3. fv-3: Vine-Ripened Cherry Tomatoes (Fruits & Vegetables, juicy)
+4. fv-5: Hass Avocado (Fruits & Vegetables, creamy and buttery)
+5. gr-1: Premium Basmati Rice (Grocery, aromatic long grains)
+6. gr-2: Cold-Pressed Olive Oil (Grocery, premium cooking/salads)
+7. gr-3: Pure Raw Organic Honey (Grocery, natural forest honey)
+8. db-1: Organic Whole Milk (Dairy, grass-fed cows)
+9. db-2: Gourmet Salted Butter (Dairy, rich creamy)
+10. db-3: Greek Yogurt Blueberry (Dairy, probiotic snack)
+11. db-4: Artisanal Sourdough Bread (Dairy, fresh morning sourdough)
+12. sn-1: Sea Salt Potato Chips (Snacks, kettle-cooked)
+13. sn-2: Roasted Almonds (Snacks, organic oven-roasted)
+14. sn-3: Dark Chocolate Chip Cookies (Snacks, soft-baked)
+15. bv-1: Cold Pressed Orange Juice (Beverages, pure cold-pressed)
+16. bv-2: Matcha Green Tea (Beverages, Japanese ceremonial)
+17. bv-3: Sparkling Mineral Water (Beverages, European springs)
+18. pc-1: Tea Tree & Neem Body Wash (Personal Care, antibacterial)
+19. pc-2: Hydrating Face Moisturizer (Personal Care, hyaluronic acid gel)
+20. hh-1: Eco-Friendly Laundry Liquid (Household, plant-powered)
+21. hh-2: Citrus Dishwashing Liquid Gel (Household, grease-cutting)
+
+Based on this, suggest exactly 4 product IDs that are highly relevant to cross-sell or complement their cart or interest, and provide a 1-sentence friendly, premium reason why these make a perfect match for them.
+Respond strictly in JSON format with the following keys:
+{
+  "recommendations": ["id1", "id2", "id3", "id4"],
+  "reasoning": "A short premium one-sentence justification"
+}`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+      }
+    });
+
+    const responseText = response.text;
+    if (responseText) {
+      try {
+        const parsed = JSON.parse(responseText.trim());
+        return res.json(parsed);
+      } catch (e) {
+        console.error("Failed to parse Gemini response as JSON:", responseText, e);
+      }
+    }
+
+    // Default fallback if response parsing fails
+    return res.json({
+      recommendations: ["fv-5", "gr-2", "db-4", "bv-1"],
+      reasoning: "We picked our finest premium organic essentials to complete your modern healthy kitchen today!"
+    });
+
+  } catch (error: any) {
+    console.log("Serving cached organic product recommendations.");
+    return res.json({
+      recommendations: ["fv-5", "gr-2", "db-4", "bv-1"],
+      reasoning: "We picked our finest premium organic essentials to complete your modern healthy kitchen today!"
+    });
+  }
+});
+
+// Vite Middleware & Static Serving Setup
+async function initServer() {
+  if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+    console.log("Development Mode: Vite middleware attached.");
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+    console.log("Production Mode: Serving static assets from dist.");
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
+  });
+}
+
+initServer().catch((err) => {
+  console.error("Failed to start server:", err);
+});

@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+@keyframes infiniteLoading {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+.animate-infinite-loading {
+  animation: infiniteLoading 1.2s infinite linear;
+}

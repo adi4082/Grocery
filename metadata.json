@@ -1,0 +1,6 @@
+{
+  "name": "QuickNow",
+  "description": "Premium on-demand grocery delivery platform with a modern white, yellow, and green theme, robust customer features, live tracking, smart search, and advanced admin and delivery partner panels.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
