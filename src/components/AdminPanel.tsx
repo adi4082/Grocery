@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useApp } from "../context/AppContext";
 import { Product } from "../data/products";
 import { Coupon, Order, SupportTicket, UserProfile, DeliveryZone, CityChargeConfig, DeliveryChargeConfig } from "../types";
+import { APIProvider, Map, Marker, InfoWindow } from "@vis.gl/react-google-maps";
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, Legend
@@ -20,16 +21,36 @@ import {
   updateUserProfile
 } from "../lib/auth-service";
 
+const GOOGLE_MAPS_API_KEY =
+  process.env.GOOGLE_MAPS_PLATFORM_KEY ||
+  (import.meta as any).env?.VITE_GOOGLE_MAPS_PLATFORM_KEY ||
+  "";
+const isGoogleMapsEnabled = Boolean(GOOGLE_MAPS_API_KEY) && GOOGLE_MAPS_API_KEY !== "YOUR_API_KEY";
+
 export const AdminPanel: React.FC = () => {
   const { 
     products, addProduct, updateProduct, deleteProduct,
     orders, updateOrderStatus, coupons, addCoupon, deleteCoupon,
     deliveryCharge, setDeliveryCharge, user,
     tickets, addTicketMessage, resolveTicket,
-    deliveryConfig, updateDeliveryConfig
-  } = useApp();
+    deliveryConfig, updateDeliveryConfig,
+    banners, addBanner, updateBanner, deleteBanner,
+    homepageSections, addSection, updateSection, deleteSection,
+    deliveryOtpRequired, setDeliveryOtpRequired
+  } = useApp() as any;
 
-  const [activeTab, setActiveTab] = useState<"dashboard" | "products" | "orders" | "coupons" | "crm_support" | "employee_roles" | "system_security" | "customers" | "delivery">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "products" | "orders" | "coupons" | "crm_support" | "employee_roles" | "system_security" | "customers" | "delivery" | "homepage_design">("dashboard");
+  const [deliverySubTab, setDeliverySubTab] = useState<"pricing" | "fleet">("pricing");
+
+  // --- Delivery Partner Fleet States ---
+  const [fleetRiders, setFleetRiders] = useState([
+    { id: "driver-1", name: "Ramesh Kumar", phone: "+91 98765 12345", status: "Online", lat: 22.5735, lng: 88.4331, vehicle: "Eco EV Scooter", earnings: 340, completed: 8 },
+    { id: "driver-2", name: "Suresh Singh", phone: "+91 98765 23456", status: "Online", lat: 22.5801, lng: 88.4200, vehicle: "Electric Bike", earnings: 240, completed: 6 },
+    { id: "driver-3", name: "Amit Patel", phone: "+91 98765 34567", status: "Offline", lat: 22.5600, lng: 88.3900, vehicle: "Bicycle", earnings: 80, completed: 2 }
+  ]);
+  const [selectedRiderForMap, setSelectedRiderForMap] = useState<any>(null);
+  const [mapCenter, setMapCenter] = useState({ lat: 22.5735, lng: 88.4331 });
+  const [mapZoom, setMapZoom] = useState(13);
 
   // --- Customer CRM States ---
   const [customers, setCustomers] = useState<UserProfile[]>([]);
@@ -44,6 +65,25 @@ export const AdminPanel: React.FC = () => {
   const [editedPhone, setEditedPhone] = useState("");
   const [editedWallet, setEditedWallet] = useState(0);
   const [editedPoints, setEditedPoints] = useState(0);
+
+  // --- Homepage Design Form States ---
+  const [showBannerForm, setShowBannerForm] = useState(false);
+  const [editingBanner, setEditingBanner] = useState<any | null>(null);
+  const [bannerTitle, setBannerTitle] = useState("");
+  const [bannerDesc, setBannerDesc] = useState("");
+  const [bannerTagline, setBannerTagline] = useState("");
+  const [bannerBg, setBannerBg] = useState("from-blue-600 to-indigo-700");
+  const [bannerCategoryId, setBannerCategoryId] = useState("fruits-veg");
+  const [bannerBadge, setBannerBadge] = useState("Deal of the Day");
+  const [bannerBtnText, setBannerBtnText] = useState("Shop Now");
+  const [bannerIsEnabled, setBannerIsEnabled] = useState(true);
+
+  const [showSectionForm, setShowSectionForm] = useState(false);
+  const [editingSection, setEditingSection] = useState<any | null>(null);
+  const [sectionTitle, setSectionTitle] = useState("");
+  const [sectionCategoryId, setSectionCategoryId] = useState("fruits-veg");
+  const [sectionOrder, setSectionOrder] = useState(1);
+  const [sectionIsVisible, setSectionIsVisible] = useState(true);
 
   const loadCustomers = async () => {
     setCustomersLoading(true);
@@ -136,6 +176,69 @@ export const AdminPanel: React.FC = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  // --- Homepage Design Handlers ---
+  const handleSaveBanner = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = {
+      title: bannerTitle,
+      desc: bannerDesc,
+      tagline: bannerTagline,
+      bg: bannerBg,
+      categoryId: bannerCategoryId,
+      badge: bannerBadge,
+      btnText: bannerBtnText,
+      isEnabled: bannerIsEnabled,
+    };
+
+    try {
+      if (editingBanner) {
+        await updateBanner(editingBanner.id, payload);
+      } else {
+        await addBanner(payload);
+      }
+      setShowBannerForm(false);
+      setEditingBanner(null);
+      // Reset form
+      setBannerTitle("");
+      setBannerDesc("");
+      setBannerTagline("");
+      setBannerBg("from-blue-600 to-indigo-700");
+      setBannerCategoryId("fruits-veg");
+      setBannerBadge("Deal of the Day");
+      setBannerBtnText("Shop Now");
+      setBannerIsEnabled(true);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSaveSection = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = {
+      title: sectionTitle,
+      categoryId: sectionCategoryId,
+      order: Number(sectionOrder),
+      isVisible: sectionIsVisible,
+    };
+
+    try {
+      if (editingSection) {
+        await updateSection(editingSection.id, payload);
+      } else {
+        await addSection(payload);
+      }
+      setShowSectionForm(false);
+      setEditingSection(null);
+      // Reset form
+      setSectionTitle("");
+      setSectionCategoryId("fruits-veg");
+      setSectionOrder(1);
+      setSectionIsVisible(true);
+    } catch (err) {
+      console.error(err);
+    }
   };
   
   // Reorder quantity threshold configuration
@@ -542,6 +645,7 @@ export const AdminPanel: React.FC = () => {
           { id: "orders", label: "Rider Orders", icon: ListFilter },
           { id: "delivery", label: "Delivery Charges", icon: Compass },
           { id: "coupons", label: "Promos & Coupons", icon: Percent },
+          { id: "homepage_design", label: "Homepage Design", icon: Compass },
           { id: "customers", label: "Customer CRM", icon: Users },
           { id: "crm_support", label: "CRM & Live Chat", icon: MessageSquare },
           { id: "employee_roles", label: "Team & Permissions", icon: Users },
@@ -667,292 +771,707 @@ export const AdminPanel: React.FC = () => {
 
       {/* VIEW: Delivery Charge Management */}
       {activeTab === "delivery" && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in duration-150">
-          {/* Main Delivery Config Form */}
-          <div className="lg:col-span-2 bg-white rounded-3xl border border-zinc-100 p-6 space-y-6">
-            <div>
-              <h3 className="text-lg font-black text-zinc-950 flex items-center gap-2">
-                <Compass className="w-5 h-5 text-orange-500" />
-                <span>Delivery Charge Policy Builder</span>
-              </h3>
-              <p className="text-xs text-zinc-400 mt-0.5">Define global pricing models, zone overrides, and free delivery thresholds.</p>
-            </div>
-
-            <form onSubmit={handleSaveDeliveryConfig} className="space-y-6">
-              {/* Charge Type selector */}
-              <div className="space-y-2">
-                <label className="text-xs font-black text-zinc-400 uppercase tracking-wider block">Pricing Policy Model</label>
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setDeliveryType("fixed")}
-                    className={`flex-1 flex flex-col items-center p-4 border rounded-2xl font-bold cursor-pointer transition text-center ${
-                      deliveryType === "fixed"
-                        ? "bg-zinc-950 border-zinc-950 text-white shadow-lg"
-                        : "bg-zinc-50 border-zinc-200 hover:bg-zinc-100 text-zinc-600"
-                    }`}
-                  >
-                    <span className="text-sm font-black">Flat Fixed Charge</span>
-                    <span className="text-[10px] opacity-75 font-normal mt-1">Single uniform fee across all cities</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setDeliveryType("distance")}
-                    className={`flex-1 flex flex-col items-center p-4 border rounded-2xl font-bold cursor-pointer transition text-center ${
-                      deliveryType === "distance"
-                        ? "bg-zinc-950 border-zinc-950 text-white shadow-lg"
-                        : "bg-zinc-50 border-zinc-200 hover:bg-zinc-100 text-zinc-600"
-                    }`}
-                  >
-                    <span className="text-sm font-black">Distance-Based Pricing</span>
-                    <span className="text-[10px] opacity-75 font-normal mt-1">Calculates charges dynamically per km</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Dynamic Inputs depending on Policy */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                {deliveryType === "fixed" ? (
-                  <div className="space-y-1.5 md:col-span-2">
-                    <label className="text-xs font-black text-zinc-500">Global Fixed Amount (₹)</label>
-                    <input
-                      type="number"
-                      required
-                      value={deliveryFixedAmount}
-                      onChange={(e) => setDeliveryFixedAmount(Number(e.target.value))}
-                      className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-bold text-zinc-800"
-                    />
-                    <p className="text-[10px] text-zinc-400 font-medium">Standard fixed charge applied when no city-specific override or active zone matches.</p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-black text-zinc-500">Base Flat Charge (₹)</label>
-                      <input
-                        type="number"
-                        required
-                        value={deliveryBaseCharge}
-                        onChange={(e) => setDeliveryBaseCharge(Number(e.target.value))}
-                        className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-bold text-zinc-800"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-black text-zinc-500">Base Free Distance Limit (km)</label>
-                      <input
-                        type="number"
-                        required
-                        value={deliveryBaseDistanceKm}
-                        onChange={(e) => setDeliveryBaseDistanceKm(Number(e.target.value))}
-                        className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-bold text-zinc-800"
-                      />
-                    </div>
-                    <div className="space-y-1.5 md:col-span-2">
-                      <label className="text-xs font-black text-zinc-500">Charge Per Additional Kilometer (₹/km)</label>
-                      <input
-                        type="number"
-                        required
-                        value={deliveryChargePerKm}
-                        onChange={(e) => setDeliveryChargePerKm(Number(e.target.value))}
-                        className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-bold text-zinc-800"
-                      />
-                    </div>
-                  </>
-                )}
-
-                <div className="space-y-1.5 md:col-span-2 pt-2 border-t border-zinc-100">
-                  <label className="text-xs font-black text-zinc-500">Free Delivery Minimum Order Amount (₹)</label>
-                  <input
-                    type="number"
-                    required
-                    value={deliveryMinOrderForFreeDelivery}
-                    onChange={(e) => setDeliveryMinOrderForFreeDelivery(Number(e.target.value))}
-                    className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-bold text-zinc-800"
-                  />
-                  <p className="text-[10px] text-zinc-400 font-medium">Overrules delivery fee to ₹0 if basket value matches or exceeds this threshold. (e.g. ₹499)</p>
-                </div>
-              </div>
-
-              {/* Submit button */}
-              <button
-                type="submit"
-                className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black text-xs py-3 rounded-xl shadow-lg transition cursor-pointer flex items-center justify-center gap-2 animate-pulse"
-              >
-                <Check className="w-4 h-4" />
-                <span>Save & Publish Changes</span>
-              </button>
-            </form>
+        <div className="space-y-6 animate-in fade-in duration-150">
+          {/* Sub Tab Buttons */}
+          <div className="flex bg-zinc-100 p-1 rounded-2xl max-w-md border border-zinc-200">
+            <button
+              onClick={() => setDeliverySubTab("pricing")}
+              className={`flex-1 text-center py-2.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                deliverySubTab === "pricing"
+                  ? "bg-white text-zinc-900 shadow-sm border border-zinc-200/50"
+                  : "text-zinc-500 hover:text-zinc-800"
+              }`}
+            >
+              Delivery Pricing Policy
+            </button>
+            <button
+              onClick={() => setDeliverySubTab("fleet")}
+              className={`flex-1 text-center py-2.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                deliverySubTab === "fleet"
+                  ? "bg-white text-zinc-900 shadow-sm border border-zinc-200/50"
+                  : "text-zinc-500 hover:text-zinc-800"
+              }`}
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span>Rider Fleet Live Dispatch</span>
+            </button>
           </div>
 
-          {/* Right sidebar: Zones and Cities overrides */}
-          <div className="space-y-6">
-            
-            {/* Zones Overrides */}
-            <div className="bg-white rounded-3xl border border-zinc-100 p-5 space-y-4">
-              <div>
-                <h4 className="text-xs font-black text-zinc-800 uppercase tracking-wider flex items-center gap-1.5">
-                  <MapPin className="w-4.5 h-4.5 text-blue-500" />
-                  <span>Delivery Zones ({deliveryZones.length})</span>
-                </h4>
-                <p className="text-[10px] text-zinc-400 leading-normal">Radius-bound delivery circles that override standard parameters.</p>
-              </div>
-
-              {/* Add Zone Inline Form */}
-              <form onSubmit={handleAddZone} className="space-y-2 bg-zinc-50 p-3 rounded-2xl border border-zinc-150">
-                <span className="text-[9px] font-black text-zinc-400 uppercase tracking-wider block">Add Active Circle</span>
-                <input
-                  type="text"
-                  required
-                  placeholder="Zone Name (e.g. Salt Lake Sec V)"
-                  value={newZoneName}
-                  onChange={(e) => setNewZoneName(e.target.value)}
-                  className="w-full p-2 bg-white border border-zinc-200 rounded-xl text-xs text-zinc-800"
-                />
-                <div className="grid grid-cols-2 gap-2">
-                  <select
-                    value={newZoneCity}
-                    onChange={(e) => setNewZoneCity(e.target.value)}
-                    className="p-2 bg-white border border-zinc-200 rounded-xl text-xs cursor-pointer text-zinc-800"
-                  >
-                    <option value="Kolkata">Kolkata</option>
-                    <option value="Delhi">Delhi</option>
-                    <option value="Gurugram">Gurugram</option>
-                  </select>
-                  <input
-                    type="number"
-                    step="0.5"
-                    required
-                    placeholder="Radius (km)"
-                    value={newZoneRadius}
-                    onChange={(e) => setNewZoneRadius(Number(e.target.value))}
-                    className="p-2 bg-white border border-zinc-200 rounded-xl text-xs text-zinc-800"
-                  />
-                  <input
-                    type="number"
-                    required
-                    placeholder="Charge (₹)"
-                    value={newZoneCharge}
-                    onChange={(e) => setNewZoneCharge(Number(e.target.value))}
-                    className="p-2 bg-white border border-zinc-200 rounded-xl text-xs text-zinc-800"
-                  />
-                  <button
-                    type="submit"
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[10px] rounded-xl cursor-pointer transition"
-                  >
-                    + Add Zone
-                  </button>
+          {deliverySubTab === "pricing" ? (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in duration-150">
+              {/* Main Delivery Config Form */}
+              <div className="lg:col-span-2 bg-white rounded-3xl border border-zinc-100 p-6 space-y-6">
+                <div>
+                  <h3 className="text-lg font-black text-zinc-950 flex items-center gap-2">
+                    <Compass className="w-5 h-5 text-orange-500" />
+                    <span>Delivery Charge Policy Builder</span>
+                  </h3>
+                  <p className="text-xs text-zinc-400 mt-0.5">Define global pricing models, zone overrides, and free delivery thresholds.</p>
                 </div>
-              </form>
 
-              {/* Zone List */}
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                {deliveryZones.length === 0 ? (
-                  <p className="text-[10px] text-zinc-400 font-bold text-center py-2">No active delivery zones declared.</p>
-                ) : (
-                  deliveryZones.map((z) => (
-                    <div key={z.id} className="flex items-center justify-between p-2 rounded-xl bg-zinc-50 border border-zinc-150 hover:bg-zinc-100 transition">
-                      <div>
-                        <p className="text-xs font-black text-zinc-900">{z.name}</p>
-                        <p className="text-[9px] text-zinc-500 font-bold">{z.city} &bull; {z.radiusKm} km radius</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-black text-blue-600">₹{z.deliveryCharge}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveZone(z.id)}
-                          className="p-1 hover:bg-rose-50 rounded text-rose-500 cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            {/* City-Specific Overrides */}
-            <div className="bg-white rounded-3xl border border-zinc-100 p-5 space-y-4">
-              <div>
-                <h4 className="text-xs font-black text-zinc-800 uppercase tracking-wider flex items-center gap-1.5">
-                  <Compass className="w-4.5 h-4.5 text-purple-500" />
-                  <span>City Overrides ({Object.keys(deliveryCitiesConfig).length})</span>
-                </h4>
-                <p className="text-[10px] text-zinc-400 leading-normal">Alternative flat rates or parameters mapped to customer default city.</p>
-              </div>
-
-              {/* Add City Override Form */}
-              <form onSubmit={handleAddCityConfig} className="space-y-2 bg-zinc-50 p-3 rounded-2xl border border-zinc-150">
-                <span className="text-[9px] font-black text-zinc-400 uppercase tracking-wider block">Configure City Override</span>
-                <input
-                  type="text"
-                  required
-                  placeholder="City Name (e.g. Kolkata, Delhi)"
-                  value={newCityName}
-                  onChange={(e) => setNewCityName(e.target.value)}
-                  className="w-full p-2 bg-white border border-zinc-200 rounded-xl text-xs text-zinc-800"
-                />
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="number"
-                    required
-                    placeholder="Fixed Rate (₹)"
-                    value={newCityFixed}
-                    onChange={(e) => setNewCityFixed(Number(e.target.value))}
-                    className="p-2 bg-white border border-zinc-200 rounded-xl text-xs text-zinc-800"
-                  />
-                  <input
-                    type="number"
-                    required
-                    placeholder="Per Km Rate (₹)"
-                    value={newCityPerKm}
-                    onChange={(e) => setNewCityPerKm(Number(e.target.value))}
-                    className="p-2 bg-white border border-zinc-200 rounded-xl text-xs text-zinc-800"
-                  />
-                  <input
-                    type="number"
-                    required
-                    placeholder="Base Rate (₹)"
-                    value={newCityBase}
-                    onChange={(e) => setNewCityBase(Number(e.target.value))}
-                    className="p-2 bg-white border border-zinc-200 rounded-xl text-xs text-zinc-800 col-span-2"
-                  />
-                  <button
-                    type="submit"
-                    className="bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-[10px] py-1.5 rounded-xl cursor-pointer transition col-span-2"
-                  >
-                    + Add City Override
-                  </button>
-                </div>
-              </form>
-
-              {/* City List */}
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                {Object.keys(deliveryCitiesConfig).length === 0 ? (
-                  <p className="text-[10px] text-zinc-400 font-bold text-center py-2">No city-specific overrides declared.</p>
-                ) : (
-                  (Object.entries(deliveryCitiesConfig) as [string, CityChargeConfig][]).map(([city, config]) => (
-                    <div key={city} className="flex items-center justify-between p-2 rounded-xl bg-zinc-50 border border-zinc-150 hover:bg-zinc-100 transition">
-                      <div>
-                        <p className="text-xs font-black text-zinc-900">{city}</p>
-                        <p className="text-[9px] text-zinc-500 font-bold">
-                          Fixed: ₹{config.fixedAmount || 0} &bull; Per Km: ₹{config.chargePerKm || 0}
-                        </p>
-                      </div>
+                <form onSubmit={handleSaveDeliveryConfig} className="space-y-6">
+                  {/* Charge Type selector */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-zinc-400 uppercase tracking-wider block">Pricing Policy Model</label>
+                    <div className="flex gap-3">
                       <button
                         type="button"
-                        onClick={() => handleRemoveCityConfig(city)}
-                        className="p-1 hover:bg-rose-50 rounded text-rose-500 cursor-pointer"
+                        onClick={() => setDeliveryType("fixed")}
+                        className={`flex-1 flex flex-col items-center p-4 border rounded-2xl font-bold cursor-pointer transition text-center ${
+                          deliveryType === "fixed"
+                            ? "bg-zinc-950 border-zinc-950 text-white shadow-lg"
+                            : "bg-zinc-50 border-zinc-200 hover:bg-zinc-100 text-zinc-600"
+                        }`}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <span className="text-sm font-black">Flat Fixed Charge</span>
+                        <span className="text-[10px] opacity-75 font-normal mt-1">Single uniform fee across all cities</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setDeliveryType("distance")}
+                        className={`flex-1 flex flex-col items-center p-4 border rounded-2xl font-bold cursor-pointer transition text-center ${
+                          deliveryType === "distance"
+                            ? "bg-zinc-950 border-zinc-950 text-white shadow-lg"
+                            : "bg-zinc-50 border-zinc-200 hover:bg-zinc-100 text-zinc-600"
+                        }`}
+                      >
+                        <span className="text-sm font-black">Distance-Based Pricing</span>
+                        <span className="text-[10px] opacity-75 font-normal mt-1">Calculates charges dynamically per km</span>
                       </button>
                     </div>
-                  ))
-                )}
+                  </div>
+
+                  {/* Dynamic Inputs depending on Policy */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                    {deliveryType === "fixed" ? (
+                      <div className="space-y-1.5 md:col-span-2">
+                        <label className="text-xs font-black text-zinc-500">Global Fixed Amount (₹)</label>
+                        <input
+                          type="number"
+                          required
+                          value={deliveryFixedAmount}
+                          onChange={(e) => setDeliveryFixedAmount(Number(e.target.value))}
+                          className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-bold text-zinc-800"
+                        />
+                        <p className="text-[10px] text-zinc-400 font-medium">Standard fixed charge applied when no city-specific override or active zone matches.</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-black text-zinc-500">Base Flat Charge (₹)</label>
+                          <input
+                            type="number"
+                            required
+                            value={deliveryBaseCharge}
+                            onChange={(e) => setDeliveryBaseCharge(Number(e.target.value))}
+                            className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-bold text-zinc-800"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-black text-zinc-500">Base Free Distance Limit (km)</label>
+                          <input
+                            type="number"
+                            required
+                            value={deliveryBaseDistanceKm}
+                            onChange={(e) => setDeliveryBaseDistanceKm(Number(e.target.value))}
+                            className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-bold text-zinc-800"
+                          />
+                        </div>
+                        <div className="space-y-1.5 md:col-span-2">
+                          <label className="text-xs font-black text-zinc-500">Charge Per Additional Kilometer (₹/km)</label>
+                          <input
+                            type="number"
+                            required
+                            value={deliveryChargePerKm}
+                            onChange={(e) => setDeliveryChargePerKm(Number(e.target.value))}
+                            className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-bold text-zinc-800"
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    <div className="space-y-1.5 md:col-span-2 pt-2 border-t border-zinc-100">
+                      <label className="text-xs font-black text-zinc-500">Free Delivery Minimum Order Amount (₹)</label>
+                      <input
+                        type="number"
+                        required
+                        value={deliveryMinOrderForFreeDelivery}
+                        onChange={(e) => setDeliveryMinOrderForFreeDelivery(Number(e.target.value))}
+                        className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-bold text-zinc-800"
+                      />
+                      <p className="text-[10px] text-zinc-400 font-medium">Overrules delivery fee to ₹0 if basket value matches or exceeds this threshold. (e.g. ₹499)</p>
+                    </div>
+                  </div>
+
+                  {/* Submit button */}
+                  <button
+                    type="submit"
+                    className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black text-xs py-3 rounded-xl shadow-lg transition cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Save & Publish Changes</span>
+                  </button>
+                </form>
+              </div>
+
+              {/* Right sidebar: Zones and Cities overrides */}
+              <div className="space-y-6">
+                
+                {/* Zones Overrides */}
+                <div className="bg-white rounded-3xl border border-zinc-100 p-5 space-y-4">
+                  <div>
+                    <h4 className="text-xs font-black text-zinc-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <MapPin className="w-4.5 h-4.5 text-blue-500" />
+                      <span>Delivery Zones ({deliveryZones.length})</span>
+                    </h4>
+                    <p className="text-[10px] text-zinc-400 leading-normal">Radius-bound delivery circles that override standard parameters.</p>
+                  </div>
+
+                  {/* Add Zone Inline Form */}
+                  <form onSubmit={handleAddZone} className="space-y-2 bg-zinc-50 p-3 rounded-2xl border border-zinc-150">
+                    <span className="text-[9px] font-black text-zinc-400 uppercase tracking-wider block">Add Active Circle</span>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Zone Name (e.g. Salt Lake Sec V)"
+                      value={newZoneName}
+                      onChange={(e) => setNewZoneName(e.target.value)}
+                      className="w-full p-2 bg-white border border-zinc-200 rounded-xl text-xs text-zinc-800"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        value={newZoneCity}
+                        onChange={(e) => setNewZoneCity(e.target.value)}
+                        className="p-2 bg-white border border-zinc-200 rounded-xl text-xs cursor-pointer text-zinc-800"
+                      >
+                        <option value="Kolkata">Kolkata</option>
+                        <option value="Delhi">Delhi</option>
+                        <option value="Gurugram">Gurugram</option>
+                      </select>
+                      <input
+                        type="number"
+                        step="0.5"
+                        required
+                        placeholder="Radius (km)"
+                        value={newZoneRadius}
+                        onChange={(e) => setNewZoneRadius(Number(e.target.value))}
+                        className="p-2 bg-white border border-zinc-200 rounded-xl text-xs text-zinc-800"
+                      />
+                      <input
+                        type="number"
+                        required
+                        placeholder="Charge (₹)"
+                        value={newZoneCharge}
+                        onChange={(e) => setNewZoneCharge(Number(e.target.value))}
+                        className="p-2 bg-white border border-zinc-200 rounded-xl text-xs text-zinc-800"
+                      />
+                      <button
+                        type="submit"
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[10px] rounded-xl cursor-pointer transition"
+                      >
+                        + Add Zone
+                      </button>
+                    </div>
+                  </form>
+
+                  {/* Zone List */}
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {deliveryZones.length === 0 ? (
+                      <p className="text-[10px] text-zinc-400 font-bold text-center py-2">No active delivery zones declared.</p>
+                    ) : (
+                      deliveryZones.map((z) => (
+                        <div key={z.id} className="flex items-center justify-between p-2 rounded-xl bg-zinc-50 border border-zinc-150 hover:bg-zinc-100 transition">
+                          <div>
+                            <p className="text-xs font-black text-zinc-900">{z.name}</p>
+                            <p className="text-[9px] text-zinc-500 font-bold">{z.city} &bull; {z.radiusKm} km radius</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-blue-600">₹{z.deliveryCharge}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveZone(z.id)}
+                              className="p-1 hover:bg-rose-50 rounded text-rose-500 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* City-Specific Overrides */}
+                <div className="bg-white rounded-3xl border border-zinc-100 p-5 space-y-4">
+                  <div>
+                    <h4 className="text-xs font-black text-zinc-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <Compass className="w-4.5 h-4.5 text-purple-500" />
+                      <span>City Overrides ({Object.keys(deliveryCitiesConfig).length})</span>
+                    </h4>
+                    <p className="text-[10px] text-zinc-400 leading-normal">Alternative flat rates or parameters mapped to customer default city.</p>
+                  </div>
+
+                  {/* Add City Override Form */}
+                  <form onSubmit={handleAddCityConfig} className="space-y-2 bg-zinc-50 p-3 rounded-2xl border border-zinc-150">
+                    <span className="text-[9px] font-black text-zinc-400 uppercase tracking-wider block">Configure City Override</span>
+                    <input
+                      type="text"
+                      required
+                      placeholder="City Name (e.g. Kolkata, Delhi)"
+                      value={newCityName}
+                      onChange={(e) => setNewCityName(e.target.value)}
+                      className="w-full p-2 bg-white border border-zinc-200 rounded-xl text-xs text-zinc-800"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="number"
+                        required
+                        placeholder="Fixed Rate (₹)"
+                        value={newCityFixed}
+                        onChange={(e) => setNewCityFixed(Number(e.target.value))}
+                        className="p-2 bg-white border border-zinc-200 rounded-xl text-xs text-zinc-800"
+                      />
+                      <input
+                        type="number"
+                        required
+                        placeholder="Per Km Rate (₹)"
+                        value={newCityPerKm}
+                        onChange={(e) => setNewCityPerKm(Number(e.target.value))}
+                        className="p-2 bg-white border border-zinc-200 rounded-xl text-xs text-zinc-800"
+                      />
+                      <input
+                        type="number"
+                        required
+                        placeholder="Base Rate (₹)"
+                        value={newCityBase}
+                        onChange={(e) => setNewCityBase(Number(e.target.value))}
+                        className="p-2 bg-white border border-zinc-200 rounded-xl text-xs text-zinc-800 col-span-2"
+                      />
+                      <button
+                        type="submit"
+                        className="bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-[10px] py-1.5 rounded-xl cursor-pointer transition col-span-2"
+                      >
+                        + Add City Override
+                      </button>
+                    </div>
+                  </form>
+
+                  {/* City List */}
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {Object.keys(deliveryCitiesConfig).length === 0 ? (
+                      <p className="text-[10px] text-zinc-400 font-bold text-center py-2">No city-specific overrides declared.</p>
+                    ) : (
+                      (Object.entries(deliveryCitiesConfig) as [string, CityChargeConfig][]).map(([city, config]) => (
+                        <div key={city} className="flex items-center justify-between p-2 rounded-xl bg-zinc-50 border border-zinc-150 hover:bg-zinc-100 transition">
+                          <div>
+                            <p className="text-xs font-black text-zinc-900">{city}</p>
+                            <p className="text-[9px] text-zinc-500 font-bold">
+                              Fixed: ₹{config.fixedAmount || 0} &bull; Per Km: ₹{config.chargePerKm || 0}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveCityConfig(city)}
+                            className="p-1 hover:bg-rose-50 rounded text-rose-500 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
               </div>
             </div>
+          ) : (
+            /* BRAND-NEW: Rider Fleet Live Dispatch View */
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-200">
+              
+              {/* Left Column: Fleet controls & dispatch lists (lg:col-span-7) */}
+              <div className="lg:col-span-7 space-y-6">
+                
+                {/* 1. Security & Handover OTP Verification Config */}
+                <div className="bg-white rounded-3xl border border-zinc-100 p-5 space-y-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-1">
+                      <h4 className="text-xs font-black text-zinc-800 uppercase tracking-wider flex items-center gap-1.5">
+                        <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                        <span>OTP Handover Verification</span>
+                      </h4>
+                      <p className="text-[10px] text-zinc-500 font-bold">
+                        Enforces zero-trust delivery verification. When active, riders must enter the customer-held OTP before completing orders.
+                      </p>
+                    </div>
+                    
+                    {/* Toggle Button */}
+                    <button
+                      type="button"
+                      onClick={() => setDeliveryOtpRequired(!deliveryOtpRequired)}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        deliveryOtpRequired ? "bg-emerald-600" : "bg-zinc-200"
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          deliveryOtpRequired ? "translate-x-5" : "translate-x-0"
+                        }`}
+                      />
+                    </button>
+                  </div>
 
-          </div>
+                  <div className="flex items-center gap-2 p-2 bg-zinc-50 border border-zinc-200 rounded-xl">
+                    <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
+                    <span className="text-[9px] font-mono font-bold text-zinc-600">
+                      STATUS: {deliveryOtpRequired ? "ENFORCED SECURE HANDOVER ACTIVE" : "STANDARD HANDOVER BYPASSED"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 2. Active Riders Grid */}
+                <div className="bg-white rounded-3xl border border-zinc-100 p-5 space-y-4">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h4 className="text-xs font-black text-zinc-800 uppercase tracking-wider">
+                        Active Fleet Status ({fleetRiders.filter(r => r.status === "Online").length} Online)
+                      </h4>
+                      <p className="text-[10px] text-zinc-400">Track and manage active delivery partners on duty.</p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Simulate minor rider coordinate drift to test live map updates!
+                        setFleetRiders(prev =>
+                          prev.map(r => {
+                            if (r.status === "Online") {
+                              const driftLat = (Math.random() - 0.5) * 0.003;
+                              const driftLng = (Math.random() - 0.5) * 0.003;
+                              return { ...r, lat: r.lat + driftLat, lng: r.lng + driftLng };
+                            }
+                            return r;
+                          })
+                        );
+                      }}
+                      className="bg-zinc-100 hover:bg-zinc-200 p-1.5 rounded-lg border border-zinc-200 text-zinc-600 hover:text-zinc-900 transition flex items-center gap-1 cursor-pointer text-[10px] font-black"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      <span>Drift Coordinates</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {fleetRiders.map(rider => (
+                      <div
+                        key={rider.id}
+                        onClick={() => {
+                          setSelectedRiderForMap(rider);
+                          setMapCenter({ lat: rider.lat, lng: rider.lng });
+                          setMapZoom(15);
+                        }}
+                        className={`p-3 rounded-2xl border transition-all cursor-pointer text-left relative overflow-hidden ${
+                          selectedRiderForMap?.id === rider.id
+                            ? "bg-zinc-900 border-zinc-900 text-white shadow-md"
+                            : "bg-zinc-50 border-zinc-200 hover:bg-zinc-100 text-zinc-800"
+                        }`}
+                      >
+                        {/* Status tag */}
+                        <span className={`absolute top-2 right-2 px-1.5 py-0.5 rounded-md text-[8px] font-extrabold uppercase ${
+                          rider.status === "Online"
+                            ? "bg-emerald-500/10 text-emerald-500"
+                            : "bg-zinc-200 text-zinc-500"
+                        }`}>
+                          {rider.status}
+                        </span>
+
+                        <div className="font-extrabold text-xs">{rider.name}</div>
+                        <div className="text-[10px] text-zinc-400 mt-0.5">{rider.vehicle} &bull; {rider.phone}</div>
+                        
+                        <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-zinc-200/20 text-[9px] font-mono">
+                          <div>
+                            <span className="text-zinc-400 block uppercase">Today's Earnings</span>
+                            <span className="font-extrabold text-xs text-orange-500">₹{rider.earnings}</span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-400 block uppercase">Completed</span>
+                            <span className="font-extrabold text-xs text-blue-500">{rider.completed} orders</span>
+                          </div>
+                        </div>
+
+                        <div className="mt-2 text-[8px] text-zinc-400 font-mono">
+                          GPS Lat: {rider.lat.toFixed(4)}, Lng: {rider.lng.toFixed(4)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 3. Orders Dispatch Desk (Reassignment & Tracker) */}
+                <div className="bg-white rounded-3xl border border-zinc-100 p-5 space-y-4">
+                  <div>
+                    <h4 className="text-xs font-black text-zinc-800 uppercase tracking-wider">
+                      Orders Assignment Desk
+                    </h4>
+                    <p className="text-[10px] text-zinc-400">Assign unassigned orders or reassign in-progress orders to available partners.</p>
+                  </div>
+
+                  <div className="space-y-2.5 max-h-[350px] overflow-y-auto pr-1">
+                    {orders.length === 0 ? (
+                      <p className="text-[10px] text-zinc-400 font-bold text-center py-4">No active orders found in database.</p>
+                    ) : (
+                      orders.map((o: any) => {
+                        const assignedRider = fleetRiders.find(r => r.id === o.deliveryPartnerId);
+
+                        return (
+                          <div key={o.id} className="p-3.5 bg-zinc-50 border border-zinc-200 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-left">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-xs font-black text-zinc-900">{o.id}</span>
+                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md uppercase bg-orange-100 text-orange-700">
+                                  {o.status}
+                                </span>
+                                <span className="text-[9px] font-mono text-zinc-400">{o.createdAt.substring(11, 16)}</span>
+                              </div>
+                              <p className="text-xs font-bold text-zinc-800">{o.customerName} &bull; {o.customerPhone}</p>
+                              <p className="text-[10px] text-zinc-500 leading-normal line-clamp-1">{o.address}</p>
+                              <p className="text-[9px] font-mono text-zinc-400 font-bold">Total: ₹{o.total} &bull; Method: {o.paymentMethod}</p>
+                            </div>
+
+                            {/* Assignment Selector Controls */}
+                            <div className="space-y-1.5 w-full md:w-auto">
+                              <label className="text-[9px] font-extrabold uppercase text-zinc-400 block">Dispatch To:</label>
+                              <select
+                                value={o.deliveryPartnerId || ""}
+                                onChange={(e) => {
+                                  const riderId = e.target.value === "" ? null : e.target.value;
+                                  const newStatus = riderId ? "Accepted" : "Pending";
+                                  updateOrderStatus(o.id, newStatus, riderId);
+                                }}
+                                className="w-full md:w-40 p-2 bg-white border border-zinc-200 rounded-xl text-xs font-bold cursor-pointer text-zinc-800"
+                              >
+                                <option value="">--- Unassigned ---</option>
+                                {fleetRiders.map(rider => (
+                                  <option key={rider.id} value={rider.id}>
+                                    {rider.name} ({rider.status})
+                                  </option>
+                                ))}
+                              </select>
+                              
+                              {assignedRider && (
+                                <div className="text-[9px] text-zinc-400 font-bold mt-1 text-right">
+                                  Tracked: <span className="text-blue-600">{assignedRider.name}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Right Column: Dynamic Maps Panel (lg:col-span-5) */}
+              <div className="lg:col-span-5 space-y-6">
+                
+                <div className="bg-white rounded-3xl border border-zinc-100 p-5 space-y-4">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h4 className="text-xs font-black text-zinc-800 uppercase tracking-wider">
+                        Rider Live Dispatch Radar
+                      </h4>
+                      <p className="text-[10px] text-zinc-400">Centering: {selectedRiderForMap ? selectedRiderForMap.name : "All Fleet"}</p>
+                    </div>
+
+                    {selectedRiderForMap && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedRiderForMap(null);
+                          setMapCenter({ lat: 22.5735, lng: 88.4331 });
+                          setMapZoom(13);
+                        }}
+                        className="text-[9px] font-black text-zinc-400 hover:text-zinc-600 bg-zinc-50 border border-zinc-200 px-2 py-1 rounded-md"
+                      >
+                        Reset Center
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Render Google Maps or Custom Interactive Fallback */}
+                  {isGoogleMapsEnabled ? (
+                    <div className="relative rounded-2xl overflow-hidden border border-zinc-200 shadow-sm" style={{ height: "400px", width: "100%" }}>
+                      <APIProvider apiKey={GOOGLE_MAPS_API_KEY} version="weekly">
+                        <Map
+                          style={{ height: "100%", width: "100%" }}
+                          defaultCenter={{ lat: 22.5735, lng: 88.4331 }}
+                          center={mapCenter}
+                          defaultZoom={13}
+                          zoom={mapZoom}
+                          gestureHandling={"greedy"}
+                          disableDefaultUI={false}
+                          internalUsageAttributionIds={["gmp_mcp_codeassist_v1_aistudio"]}
+                        >
+                          {/* Plot online riders */}
+                          {fleetRiders.map((rider) => (
+                            <Marker
+                              key={rider.id}
+                              position={{ lat: rider.lat, lng: rider.lng }}
+                              title={rider.name}
+                              onClick={() => {
+                                setSelectedRiderForMap(rider);
+                                setMapCenter({ lat: rider.lat, lng: rider.lng });
+                                setMapZoom(15);
+                              }}
+                            />
+                          ))}
+
+                          {/* Plot orders with custom locations */}
+                          {orders.filter((o: any) => o.lat && o.lng).map((o: any) => (
+                            <Marker
+                              key={o.id}
+                              position={{ lat: o.lat!, lng: o.lng! }}
+                              title={`Customer: ${o.customerName}`}
+                            />
+                          ))}
+                        </Map>
+                      </APIProvider>
+                    </div>
+                  ) : (
+                    /* Elegant fall-back interactive SVG radar map */
+                    <div className="relative bg-[#090D16] rounded-2xl overflow-hidden border border-zinc-800 p-2 text-white h-[400px] flex flex-col justify-between">
+                      <div className="flex items-center justify-between text-[10px] font-mono p-1 border-b border-zinc-800">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-ping" />
+                          <span className="text-blue-400 font-bold uppercase">MOCK DISPATCH FEED</span>
+                        </div>
+                        <span className="text-zinc-500">ZOOM: {mapZoom}x</span>
+                      </div>
+
+                      {/* Map Canvas */}
+                      <div className="flex-1 relative overflow-hidden flex items-center justify-center">
+                        <svg viewBox="0 0 400 300" className="w-full h-full">
+                          <defs>
+                            <pattern id="grid-admin" width="40" height="40" patternUnits="userSpaceOnUse">
+                              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#141C2F" strokeWidth="0.5" />
+                            </pattern>
+                          </defs>
+                          <rect width="100%" height="100%" fill="url(#grid-admin)" />
+
+                          {/* Streets layout */}
+                          <g stroke="#18243E" strokeWidth="8" opacity="0.6" strokeLinecap="round" strokeLinejoin="round" fill="none">
+                            <path d="M 40 40 L 360 40 M 40 150 L 360 150 M 40 260 L 360 260" />
+                            <path d="M 100 40 L 100 260 M 200 40 L 200 260 M 300 40 L 300 260" />
+                          </g>
+
+                          {/* Dispatch Station Beacon (Dark Store Center) */}
+                          <g transform="translate(200, 150)">
+                            <circle r="18" fill="#F97316" className="animate-[ping_2s_infinite]" opacity="0.1" />
+                            <circle r="6" fill="#F97316" />
+                            <circle r="2" fill="white" />
+                          </g>
+
+                          {/* Plot active riders */}
+                          {fleetRiders.map((rider) => {
+                            const svgX = 200 + (rider.lng - 88.4331) * 8000;
+                            const svgY = 150 - (rider.lat - 22.5735) * 8000;
+
+                            return (
+                              <g
+                                key={rider.id}
+                                transform={`translate(${Math.max(20, Math.min(380, svgX))}, ${Math.max(20, Math.min(280, svgY))})`}
+                                className="cursor-pointer transition-all duration-300"
+                                onClick={() => {
+                                  setSelectedRiderForMap(rider);
+                                }}
+                              >
+                                <circle r="12" fill="#3B82F6" className="animate-[ping_1.5s_infinite]" opacity="0.15" />
+                                <circle r="6" fill={rider.status === "Online" ? "#3B82F6" : "#64748B"} />
+                                <text y="-10" textAnchor="middle" fill="#94A3B8" fontSize="8" fontWeight="bold">
+                                  {rider.name.split(" ")[0]}
+                                </text>
+                              </g>
+                            );
+                          })}
+
+                          {/* Plot active order locations needing delivery */}
+                          {orders.map((order: any) => {
+                            if (!order.lat || !order.lng) return null;
+                            const svgX = 200 + (order.lng - 88.4331) * 8000;
+                            const svgY = 150 - (order.lat - 22.5735) * 8000;
+                            const isAssigned = Boolean(order.deliveryPartnerId);
+
+                            return (
+                              <g
+                                key={order.id}
+                                transform={`translate(${Math.max(20, Math.min(380, svgX))}, ${Math.max(20, Math.min(280, svgY))})`}
+                                className="cursor-pointer"
+                              >
+                                <polygon points="0,-10 6,2 -6,2" fill={isAssigned ? "#10B981" : "#EF4444"} />
+                                <text y="12" textAnchor="middle" fill="#E2E8F0" fontSize="8" fontWeight="bold">
+                                  {order.id}
+                                </text>
+                              </g>
+                            );
+                          })}
+                        </svg>
+                      </div>
+
+                      {/* Map Info Bar */}
+                      <div className="bg-zinc-950/90 border-t border-zinc-800 p-2 rounded-xl text-[9px] font-mono text-zinc-400 text-left space-y-1">
+                        <div className="flex justify-between">
+                          <span>CENTER GPS:</span>
+                          <span className="text-zinc-200 font-bold">{mapCenter.lat.toFixed(4)} N, {mapCenter.lng.toFixed(4)} E</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>SELECTED:</span>
+                          <span className="text-blue-400 font-bold">{selectedRiderForMap ? `${selectedRiderForMap.name} (${selectedRiderForMap.vehicle})` : "Global Overview"}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Geolocation Live Update test action */}
+                  <div className="bg-zinc-50 border border-zinc-150 rounded-2xl p-3 flex items-center justify-between">
+                    <div className="text-left space-y-0.5">
+                      <span className="text-[10px] font-black text-zinc-800 block uppercase">Test Live Geolocation</span>
+                      <span className="text-[9px] text-zinc-400 block font-medium">Verify tracking API via mock location updates.</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (navigator.geolocation) {
+                          navigator.geolocation.getCurrentPosition((pos) => {
+                            const { latitude, longitude } = pos.coords;
+                            setFleetRiders(prev =>
+                              prev.map(r => r.id === "driver-1" ? { ...r, lat: latitude, lng: longitude } : r)
+                            );
+                            setMapCenter({ lat: latitude, lng: longitude });
+                            setMapZoom(16);
+                          }, (err) => {
+                            console.error(err.message);
+                          });
+                        }
+                      }}
+                      className="bg-orange-500 hover:bg-orange-600 text-white font-extrabold text-[10px] px-3 py-1.5 rounded-xl transition cursor-pointer flex items-center gap-1.5"
+                    >
+                      <MapPin className="w-3.5 h-3.5" />
+                      <span>Fetch Live Location</span>
+                    </button>
+                  </div>
+
+                </div>
+
+              </div>
+
+            </div>
+          )}
         </div>
       )}
 
@@ -1719,6 +2238,419 @@ export const AdminPanel: React.FC = () => {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* VIEW: Homepage Design Tab */}
+      {activeTab === "homepage_design" && (
+        <div className="space-y-8 animate-in fade-in duration-200">
+          
+          {/* Header Description */}
+          <div className="bg-gradient-to-r from-blue-500/10 via-indigo-500/5 to-teal-500/5 border border-indigo-100 p-6 rounded-3xl space-y-2">
+            <h3 className="font-extrabold text-sm text-indigo-950 uppercase tracking-wider flex items-center gap-1.5">
+              <span className="w-2 h-4 bg-indigo-500 rounded-full animate-pulse" />
+              Dynamic Real-time Homepage Engine
+            </h3>
+            <p className="text-xs text-zinc-500 leading-relaxed">
+              Design the customer's landing screen catalog sections and banner sliders in real-time. Change layout order, link promos to categories, toggle visibility, and update titles instantly without redeploying code. All configs are synced via Cloud Firestore.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            
+            {/* 1. Banners Management */}
+            <div className="bg-white rounded-3xl border border-zinc-100 p-6 space-y-6 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-extrabold text-zinc-900 uppercase tracking-wider">Promotional Banners</h4>
+                  <p className="text-[11px] text-zinc-500 font-bold mt-0.5">Manage carousel slides on the home screen</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setEditingBanner(null);
+                    setBannerTitle("");
+                    setBannerDesc("");
+                    setBannerTagline("");
+                    setBannerBg("from-blue-600 to-indigo-700");
+                    setBannerCategoryId("fruits-veg");
+                    setBannerBadge("Deal of the Day");
+                    setBannerBtnText("Shop Now");
+                    setBannerIsEnabled(true);
+                    setShowBannerForm(!showBannerForm);
+                  }}
+                  className="bg-zinc-950 hover:bg-zinc-800 text-white font-black text-xs px-3.5 py-2 rounded-xl flex items-center gap-1 cursor-pointer transition active:scale-95 select-none"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{showBannerForm && !editingBanner ? "Cancel" : "Add Banner"}</span>
+                </button>
+              </div>
+
+              {/* Banner Creation/Edition Form */}
+              {showBannerForm && (
+                <form onSubmit={handleSaveBanner} className="bg-zinc-50/50 border border-zinc-200/60 rounded-2xl p-4 space-y-4 animate-in slide-in-from-top-4 duration-200">
+                  <h5 className="font-black text-xs text-zinc-800 uppercase tracking-wider">
+                    {editingBanner ? "✏️ Edit Banner Slide" : "✨ Create New Banner Slide"}
+                  </h5>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-zinc-400">Banner Title</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Organic Red Apples"
+                        value={bannerTitle}
+                        onChange={(e) => setBannerTitle(e.target.value)}
+                        className="w-full p-2 rounded-xl text-xs border border-zinc-200 bg-white text-zinc-800 focus:outline-none focus:border-zinc-500"
+                      />
+                    </div>
+                    
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-zinc-400">Badge Text</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Deal of the Day"
+                        value={bannerBadge}
+                        onChange={(e) => setBannerBadge(e.target.value)}
+                        className="w-full p-2 rounded-xl text-xs border border-zinc-200 bg-white text-zinc-800 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="text-[10px] font-black uppercase text-zinc-400">Description</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Farm fresh organic apples & daily essentials delivered in 10 minutes flat."
+                        value={bannerDesc}
+                        onChange={(e) => setBannerDesc(e.target.value)}
+                        className="w-full p-2 rounded-xl text-xs border border-zinc-200 bg-white text-zinc-800 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-zinc-400">Tagline / Discount</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. UP TO 50% OFF"
+                        value={bannerTagline}
+                        onChange={(e) => setBannerTagline(e.target.value)}
+                        className="w-full p-2 rounded-xl text-xs border border-zinc-200 bg-white text-zinc-800 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-zinc-400">Action Button Text</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Shop Now"
+                        value={bannerBtnText}
+                        onChange={(e) => setBannerBtnText(e.target.value)}
+                        className="w-full p-2 rounded-xl text-xs border border-zinc-200 bg-white text-zinc-800 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-zinc-400">Linked Category ID</label>
+                      <select
+                        value={bannerCategoryId}
+                        onChange={(e) => setBannerCategoryId(e.target.value)}
+                        className="w-full p-2 rounded-xl text-xs border border-zinc-200 bg-white text-zinc-800 focus:outline-none"
+                      >
+                        <option value="fruits-veg">Fresh Fruits & Vegetables</option>
+                        <option value="grocery-staples">Grocery & Staples</option>
+                        <option value="dairy-bread">Dairy & Morning Bread</option>
+                        <option value="snacks-munchies">Snacks & Munchies</option>
+                        <option value="beverages">Juices & Beverages</option>
+                        <option value="personal-care">Personal Care</option>
+                        <option value="household">Household Utilities</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-zinc-400">Background Preset</label>
+                      <select
+                        value={bannerBg}
+                        onChange={(e) => setBannerBg(e.target.value)}
+                        className="w-full p-2 rounded-xl text-xs border border-zinc-200 bg-white text-zinc-800 focus:outline-none"
+                      >
+                        <option value="from-blue-600 to-indigo-700">Royal Indigo-Blue Gradient</option>
+                        <option value="from-emerald-600 to-teal-700">Organic Emerald-Teal Gradient</option>
+                        <option value="from-rose-600 to-pink-700">Beauty Velvet-Rose Gradient</option>
+                        <option value="from-amber-500 to-orange-600">Fresh Harvest Orange Gradient</option>
+                        <option value="from-purple-600 to-indigo-700">Twilight Violet Gradient</option>
+                        <option value="from-zinc-800 to-zinc-950">Midnight Slate Metallic</option>
+                      </select>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2">
+                      <input
+                        type="checkbox"
+                        id="bannerIsEnabled"
+                        checked={bannerIsEnabled}
+                        onChange={(e) => setBannerIsEnabled(e.target.checked)}
+                        className="w-4 h-4 text-emerald-600 focus:ring-emerald-500 border-zinc-300 rounded"
+                      />
+                      <label htmlFor="bannerIsEnabled" className="text-xs text-zinc-700 font-extrabold uppercase">
+                        Enable banner slide
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2.5 pt-2">
+                    <button
+                      type="submit"
+                      className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl cursor-pointer transition shadow-md shadow-emerald-500/15"
+                    >
+                      {editingBanner ? "Save Changes" : "Publish Slide"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowBannerForm(false);
+                        setEditingBanner(null);
+                      }}
+                      className="py-2.5 px-4 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-black text-xs rounded-xl cursor-pointer transition"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* Banners List */}
+              <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                {(banners || []).length === 0 ? (
+                  <div className="text-center py-8 border border-dashed border-zinc-200 rounded-2xl bg-zinc-50 text-xs text-zinc-400 font-bold">
+                    No banners configured. Add a promotional slide above.
+                  </div>
+                ) : (
+                  (banners || []).map((b: any) => (
+                    <div key={b.id} className="p-4 bg-zinc-50 border border-zinc-150 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-zinc-300 transition">
+                      <div className="space-y-1.5 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[9px] bg-white border border-zinc-350 px-2.5 py-0.5 rounded-full font-black text-zinc-700 uppercase">
+                            {b.badge || "Deal"}
+                          </span>
+                          <span className={`text-[9px] font-black px-2.5 py-0.5 rounded-full uppercase ${
+                            b.isEnabled !== false ? "bg-emerald-50 text-emerald-700" : "bg-zinc-200 text-zinc-500"
+                          }`}>
+                            {b.isEnabled !== false ? "Active" : "Disabled"}
+                          </span>
+                          <span className="text-[10px] font-mono text-zinc-400 font-bold">
+                            Link: {b.categoryId || "None"}
+                          </span>
+                        </div>
+                        <h5 className="font-extrabold text-sm text-zinc-900 leading-tight">{b.title}</h5>
+                        <p className="text-[11px] text-zinc-500 leading-relaxed font-semibold max-w-sm">{b.desc}</p>
+                      </div>
+
+                      <div className="flex items-center gap-2.5 self-end sm:self-auto">
+                        <button
+                          onClick={() => {
+                            setEditingBanner(b);
+                            setBannerTitle(b.title || "");
+                            setBannerDesc(b.desc || "");
+                            setBannerTagline(b.tagline || "");
+                            setBannerBg(b.bg || "from-blue-600 to-indigo-700");
+                            setBannerCategoryId(b.categoryId || "fruits-veg");
+                            setBannerBadge(b.badge || "Deal of the Day");
+                            setBannerBtnText(b.btnText || "Shop Now");
+                            setBannerIsEnabled(b.isEnabled !== false);
+                            setShowBannerForm(true);
+                          }}
+                          className="bg-white hover:bg-zinc-100 text-zinc-700 p-2 rounded-xl border border-zinc-200 cursor-pointer active:scale-90 transition"
+                          title="Edit"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={async () => {
+                            const confirmed = confirm(`Are you sure you want to delete banner "${b.title}"?`);
+                            if (confirmed) {
+                              await deleteBanner(b.id);
+                            }
+                          }}
+                          className="bg-red-50 hover:bg-red-100 text-red-600 p-2 rounded-xl border border-red-100 cursor-pointer active:scale-90 transition"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* 2. Sections Management */}
+            <div className="bg-white rounded-3xl border border-zinc-100 p-6 space-y-6 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-extrabold text-zinc-900 uppercase tracking-wider">Homepage Rows / Sections</h4>
+                  <p className="text-[11px] text-zinc-500 font-bold mt-0.5">Change row sequences and catalogs displayed</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setEditingSection(null);
+                    setSectionTitle("");
+                    setSectionCategoryId("fruits-veg");
+                    setSectionOrder((homepageSections || []).length + 1);
+                    setSectionIsVisible(true);
+                    setShowSectionForm(!showSectionForm);
+                  }}
+                  className="bg-zinc-950 hover:bg-zinc-800 text-white font-black text-xs px-3.5 py-2 rounded-xl flex items-center gap-1 cursor-pointer transition active:scale-95 select-none"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{showSectionForm && !editingSection ? "Cancel" : "Add Row"}</span>
+                </button>
+              </div>
+
+              {/* Section Creation/Edition Form */}
+              {showSectionForm && (
+                <form onSubmit={handleSaveSection} className="bg-zinc-50/50 border border-zinc-200/60 rounded-2xl p-4 space-y-4 animate-in slide-in-from-top-4 duration-200">
+                  <h5 className="font-black text-xs text-zinc-800 uppercase tracking-wider">
+                    {editingSection ? "✏️ Edit Homepage Section Row" : "✨ Create New Homepage Section Row"}
+                  </h5>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-zinc-400">Row Title / Header</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Fresh Organic Greens"
+                        value={sectionTitle}
+                        onChange={(e) => setSectionTitle(e.target.value)}
+                        className="w-full p-2 rounded-xl text-xs border border-zinc-200 bg-white text-zinc-800 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-zinc-400">Mapped Category ID Link</label>
+                      <select
+                        value={sectionCategoryId}
+                        onChange={(e) => setSectionCategoryId(e.target.value)}
+                        className="w-full p-2 rounded-xl text-xs border border-zinc-200 bg-white text-zinc-800 focus:outline-none"
+                      >
+                        <option value="fruits-veg">Fruits & Vegetables</option>
+                        <option value="grocery-staples">Grocery & Staples</option>
+                        <option value="dairy-bread">Dairy & Morn Bread</option>
+                        <option value="snacks-munchies">Snacks & Cookies</option>
+                        <option value="beverages">Hydrating Beverages</option>
+                        <option value="personal-care">Personal Care</option>
+                        <option value="household">Household Utilities</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-zinc-400">Display Sequence Order</label>
+                      <input
+                        type="number"
+                        required
+                        min="1"
+                        placeholder="e.g. 1"
+                        value={sectionOrder}
+                        onChange={(e) => setSectionOrder(Number(e.target.value))}
+                        className="w-full p-2 rounded-xl text-xs border border-zinc-200 bg-white text-zinc-800 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-4">
+                      <input
+                        type="checkbox"
+                        id="sectionIsVisible"
+                        checked={sectionIsVisible}
+                        onChange={(e) => setSectionIsVisible(e.target.checked)}
+                        className="w-4 h-4 text-emerald-600 focus:ring-emerald-500 border-zinc-300 rounded"
+                      />
+                      <label htmlFor="sectionIsVisible" className="text-xs text-zinc-700 font-extrabold uppercase">
+                        Visible on home screen
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2.5 pt-2">
+                    <button
+                      type="submit"
+                      className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl cursor-pointer transition shadow-md shadow-emerald-500/15"
+                    >
+                      {editingSection ? "Save Changes" : "Publish Section Row"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowSectionForm(false);
+                        setEditingSection(null);
+                      }}
+                      className="py-2.5 px-4 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-black text-xs rounded-xl cursor-pointer transition"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* Sections List */}
+              <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                {(homepageSections || []).length === 0 ? (
+                  <div className="text-center py-8 border border-dashed border-zinc-200 rounded-2xl bg-zinc-50 text-xs text-zinc-400 font-bold">
+                    No custom rows configured. App will fall back to standard sections.
+                  </div>
+                ) : (
+                  [...homepageSections].sort((a: any, b: any) => (a.order || 0) - (b.order || 0)).map((s: any) => (
+                    <div key={s.id} className="p-4 bg-zinc-50 border border-zinc-150 rounded-2xl flex items-center justify-between gap-4 hover:border-zinc-300 transition">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[10px] font-black bg-zinc-900 text-white px-2 py-0.5 rounded-lg">
+                            Row #{s.order || 1}
+                          </span>
+                          <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
+                            s.isVisible !== false ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+                          }`}>
+                            {s.isVisible !== false ? "Visible" : "Hidden"}
+                          </span>
+                        </div>
+                        <h5 className="font-extrabold text-sm text-zinc-900 leading-tight mt-1">{s.title}</h5>
+                        <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mt-0.5">Category link: {s.categoryId || "None"}</p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setEditingSection(s);
+                            setSectionTitle(s.title || "");
+                            setSectionCategoryId(s.categoryId || "fruits-veg");
+                            setSectionOrder(s.order !== undefined ? s.order : 1);
+                            setSectionIsVisible(s.isVisible !== false);
+                            setShowSectionForm(true);
+                          }}
+                          className="bg-white hover:bg-zinc-100 text-zinc-700 p-2 rounded-xl border border-zinc-200 cursor-pointer active:scale-90 transition"
+                          title="Edit"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={async () => {
+                            const confirmed = confirm(`Are you sure you want to delete section row "${s.title}"?`);
+                            if (confirmed) {
+                              await deleteSection(s.id);
+                            }
+                          }}
+                          className="bg-red-50 hover:bg-red-100 text-red-600 p-2 rounded-xl border border-red-100 cursor-pointer active:scale-90 transition"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+          </div>
+
         </div>
       )}
 

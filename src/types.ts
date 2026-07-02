@@ -55,7 +55,7 @@ export interface Order {
   discount: number;
   deliveryCharge: number;
   total: number;
-  status: "Pending" | "Accepted" | "Dispatched" | "Out for Delivery" | "Delivered" | "Rejected";
+  status: "Pending" | "Accepted" | "Picked Up" | "Out for Delivery" | "Delivered" | "Failed Delivery" | "Cancelled" | "Dispatched" | "Rejected";
   createdAt: string;
   address: string;
   paymentMethod: "COD" | "UPI";
@@ -63,6 +63,8 @@ export interface Order {
   deliveryOTP: string;
   deliveryPartnerId: string | null;
   deliveryNotes?: string;
+  lat?: number;
+  lng?: number;
 }
 
 export interface Coupon {

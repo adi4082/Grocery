@@ -98,10 +98,10 @@ export const CustomerSupportBubble: React.FC = () => {
 
   if (!isOpen) {
     return (
-      <div className="fixed bottom-6 right-6 z-50">
+      <div className="fixed bottom-20 sm:bottom-6 right-4 sm:right-6 z-50">
         <button
           onClick={() => setIsOpen(true)}
-          className="relative bg-emerald-600 hover:bg-emerald-700 text-white p-4 rounded-full shadow-2xl transition-all duration-300 group hover:scale-110 flex items-center justify-center cursor-pointer border border-white/20"
+          className="relative bg-emerald-600 hover:bg-emerald-700 text-white p-4 rounded-full shadow-2xl transition-all duration-300 group hover:scale-110 flex items-center justify-center cursor-pointer border border-white/20 animate-bounce"
         >
           {/* Pulsing ring outer */}
           <div className="absolute inset-0 rounded-full bg-emerald-600/30 animate-ping -z-10" />
@@ -116,7 +116,7 @@ export const CustomerSupportBubble: React.FC = () => {
   }
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 w-full max-w-[370px] sm:max-w-[400px] bg-white rounded-[32px] shadow-2xl border border-zinc-100 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-5 duration-300 h-[520px] max-h-[90vh]">
+    <div className="fixed bottom-20 sm:bottom-6 right-4 sm:right-6 z-50 w-full max-w-[340px] sm:max-w-[400px] bg-white rounded-[32px] shadow-2xl border border-zinc-100 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-5 duration-300 h-[480px] max-h-[75vh]">
       
       {/* Widget Header */}
       <div className="bg-zinc-900 text-white p-5 flex items-center justify-between">

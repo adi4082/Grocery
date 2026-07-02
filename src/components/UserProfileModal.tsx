@@ -43,8 +43,16 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   onReplayOnboarding
 }) => {
   const { 
-    user, setUser, orders, addNotification, wishlist, products, notifications, markNotificationsAsRead, tickets, createTicket, addTicketMessage
+    user, setUser, orders, addNotification, wishlist, products, notifications, markNotificationsAsRead, tickets, createTicket, addTicketMessage, setCart
   } = useApp() as any;
+
+  const handleReorder = (order: Order) => {
+    if (!order || !order.items || order.items.length === 0) return;
+    setCart(order.items);
+    addNotification("Reordered Successfully", `Basket populated with ${order.items.length} items from past purchase!`);
+    setSuccess(`Successfully reordered! ${order.items.length} items loaded into your basket.`);
+    setTimeout(() => setSuccess(""), 4000);
+  };
 
   // --- Modal Navigation States ---
   const [activeTab, setActiveTab] = useState<ModalTab>("login");
@@ -526,7 +534,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const activeTicket = tickets.find((t: any) => t.id === selectedTicketId);
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
+    <div className="fixed inset-0 z-[100] overflow-y-auto">
       {/* Backdrop */}
       <div 
         onClick={onClose}
@@ -1168,17 +1176,26 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                                 </div>
                                 <div className="flex items-center justify-between border-t border-zinc-50 pt-2.5 text-xs">
                                   <span>Total Paid: <strong className="text-zinc-950 font-black">₹{o.total}</strong></span>
-                                  {o.status !== "Delivered" && o.status !== "Rejected" && (
+                                  <div className="flex items-center gap-2">
                                     <button 
-                                      onClick={() => {
-                                        onTrackOrder(o.id);
-                                        onClose();
-                                      }}
-                                      className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-lg text-[10px] uppercase cursor-pointer"
+                                      onClick={() => handleReorder(o)}
+                                      className="flex items-center gap-1 px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-extrabold rounded-lg text-[10px] uppercase cursor-pointer transition border border-zinc-200"
                                     >
-                                      Live Track
+                                      <RefreshCw className="w-3 h-3 transition-transform duration-300 hover:rotate-180" />
+                                      Reorder
                                     </button>
-                                  )}
+                                    {o.status !== "Delivered" && o.status !== "Rejected" && (
+                                      <button 
+                                        onClick={() => {
+                                          onTrackOrder(o.id);
+                                          onClose();
+                                        }}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-lg text-[10px] uppercase cursor-pointer transition"
+                                      >
+                                        Live Track
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             ))}

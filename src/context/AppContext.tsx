@@ -12,6 +12,7 @@ interface AppContextType {
   loginAs: (email: string, role: UserRole, name?: string) => void;
   logout: () => void;
   cart: CartItem[];
+  setCart: React.Dispatch<React.SetStateAction<CartItem[]>>;
   addToCart: (product: Product, selectedWeight?: number) => void;
   removeFromCart: (productId: string) => void;
   updateCartQuantity: (productId: string, quantity: number) => void;
@@ -74,6 +75,13 @@ interface AppContextType {
   addCategory: (category: Category) => void;
   updateCategory: (id: string, updated: Partial<Category>) => void;
   deleteCategory: (id: string) => void;
+  showLoginPrompt: boolean;
+  setShowLoginPrompt: (val: boolean) => void;
+  loginPromptReason: string;
+  setLoginPromptReason: (val: string) => void;
+  ensureAuthenticated: (reason?: string) => boolean;
+  deliveryOtpRequired: boolean;
+  setDeliveryOtpRequired: (val: boolean) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -100,21 +108,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // --- Core States ---
   const [user, setUser] = useState<UserProfile | null>(() => {
     const cached = localStorage.getItem("qn_user");
-    if (cached) return JSON.parse(cached);
-    // Default mock user
-    return {
-      uid: "cust-1",
-      email: "palsubhajit2005tq@gmail.com",
-      name: "Subhajit Pal",
-      phone: "+91 98765 43210",
-      role: "customer",
-      walletBalance: 350,
-      loyaltyPoints: 120,
-      addresses: ["12, Premium Park, Sector 5, Salt Lake, Kolkata", "45, Cyber City, Phase 2, Gurugram"],
-      referralCode: "QUICK_SUBH_77",
-      recentlyViewed: []
-    };
+    if (cached) {
+      try {
+        return JSON.parse(cached);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null; // Start as Guest by default on first load!
   });
+
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+  const [loginPromptReason, setLoginPromptReason] = useState("");
+
+  const ensureAuthenticated = (reason: string = "access this secure feature") => {
+    if (user) return true;
+    setLoginPromptReason(reason);
+    setShowLoginPrompt(true);
+    return false;
+  };
 
   const [cart, setCart] = useState<CartItem[]>(() => {
     const cached = localStorage.getItem("qn_cart");
@@ -212,10 +224,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       { id: 'fruits-veg', name: 'Fruits & Vegetables', icon: 'Apple', color: 'bg-emerald-50 text-emerald-600 border-emerald-100', order: 1 },
       { id: 'grocery-staples', name: 'Grocery & Staples', icon: 'Wheat', color: 'bg-amber-50 text-amber-600 border-amber-100', order: 2 },
       { id: 'dairy-bread', name: 'Dairy & Bread', icon: 'Egg', color: 'bg-sky-50 text-sky-600 border-sky-100', order: 3 },
-      { id: 'snacks-munchies', name: 'Snacks & Munchies', icon: 'Cookie', color: 'bg-orange-50 text-orange-600 border-orange-100', order: 4 },
-      { id: 'beverages', name: 'Beverages', icon: 'CupSoda', color: 'bg-purple-50 text-purple-600 border-purple-100', order: 5 },
-      { id: 'personal-care', name: 'Personal Care', icon: 'Sparkles', color: 'bg-pink-50 text-pink-600 border-pink-100', order: 6 },
-      { id: 'household', name: 'Household', icon: 'Home', color: 'bg-teal-50 text-teal-600 border-teal-100', order: 7 }
+      { id: 'beverages', name: 'Beverages', icon: 'CupSoda', color: 'bg-purple-50 text-purple-600 border-purple-100', order: 4 },
+      { id: 'snacks-munchies', name: 'Snacks & Munchies', icon: 'Cookie', color: 'bg-orange-50 text-orange-600 border-orange-100', order: 5 },
+      { id: 'personal-care', name: 'Beauty & Care', icon: 'Sparkles', color: 'bg-pink-50 text-pink-600 border-pink-100', order: 6 },
+      { id: 'household', name: 'Household Essentials', icon: 'Home', color: 'bg-teal-50 text-teal-600 border-teal-100', order: 7 },
+      { id: 'baby-care', name: 'Baby Care', icon: 'Baby', color: 'bg-rose-50 text-rose-600 border-rose-100', order: 8 },
+      { id: 'frozen-food', name: 'Frozen Food', icon: 'Snowflake', color: 'bg-cyan-50 text-cyan-600 border-cyan-100', order: 9 },
+      { id: 'medicines', name: 'Medicines', icon: 'HeartPulse', color: 'bg-red-50 text-red-600 border-red-100', order: 10 },
+      { id: 'pet-care', name: 'Pet Care', icon: 'Activity', color: 'bg-indigo-50 text-indigo-600 border-indigo-100', order: 11 },
+      { id: 'electronics', name: 'Electronics', icon: 'Laptop', color: 'bg-violet-50 text-violet-600 border-violet-100', order: 12 }
     ];
   });
 
@@ -243,7 +260,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         paymentMethod: "UPI",
         paymentStatus: "Paid",
         deliveryOTP: "4821",
-        deliveryPartnerId: "driver-1"
+        deliveryPartnerId: "driver-1",
+        lat: 22.5735,
+        lng: 88.4331
       },
       {
         id: "QN-1025",
@@ -264,7 +283,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         paymentMethod: "COD",
         paymentStatus: "Pending",
         deliveryOTP: "1593",
-        deliveryPartnerId: null
+        deliveryPartnerId: null,
+        lat: 22.5780,
+        lng: 88.4370
       }
     ];
   });
@@ -346,6 +367,131 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => unsub();
   }, []);
 
+  // Real-time sync for banners from Firestore
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "homepage", "banners_config"), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data && Array.isArray(data.list)) {
+          setBanners(data.list);
+          localStorage.setItem("qn_banners", JSON.stringify(data.list));
+        }
+      } else {
+        const initialBanners = [
+          {
+            id: "slide-1",
+            title: "Super Saver Grocery Deals",
+            tagline: "UP TO 50% OFF",
+            desc: "Farm fresh organic apples, avocados & daily essentials delivered in 10 minutes flat.",
+            bg: "from-blue-600 to-indigo-700",
+            accent: "text-amber-300",
+            btnText: "Shop Fresh Fruits",
+            badge: "Organic Freshness",
+            categoryId: "fruits-veg",
+            isEnabled: true,
+            order: 1
+          },
+          {
+            id: "slide-2",
+            title: "Gourmet Dairy & Artisanal Bakeries",
+            tagline: "FRESH EVERY MORNING",
+            desc: "Whole milk, creamier local paneer, premium butter, and authentic sourdough loaves.",
+            bg: "from-amber-400 to-orange-500",
+            accent: "text-white",
+            btnText: "Explore Dairy",
+            badge: "Artisanal Bakeries",
+            categoryId: "dairy-bread",
+            isEnabled: true,
+            order: 2
+          },
+          {
+            id: "slide-3",
+            title: "Summer Chills & Hydration Station",
+            tagline: "FLAT 20% OFF",
+            desc: "Cold-pressed juices, premium Japanese matcha green tea & imported sparkling water.",
+            bg: "from-sky-500 to-indigo-600",
+            accent: "text-yellow-300",
+            btnText: "Order Drinks",
+            badge: "Summer Specials",
+            categoryId: "beverages",
+            isEnabled: true,
+            order: 3
+          }
+        ];
+        setDoc(doc(db, "homepage", "banners_config"), { list: initialBanners })
+          .catch(err => console.warn("Could not seed banners to firestore", err));
+      }
+    }, (error) => {
+      console.warn("Firestore banners read error", error);
+    });
+    return () => unsub();
+  }, []);
+
+  // Real-time sync for homepage sections from Firestore
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "homepage", "sections_config"), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data && Array.isArray(data.list)) {
+          setHomepageSections(data.list);
+          localStorage.setItem("qn_homepage_sections", JSON.stringify(data.list));
+        }
+      } else {
+        const initialSections = [
+          { id: 'sec-veg', title: 'Vegetables', categoryId: 'fruits-veg', isVisible: true, order: 1 },
+          { id: 'sec-fruits', title: 'Fruits', categoryId: 'fruits-veg', isVisible: true, order: 2 },
+          { id: 'sec-grocery', title: 'Grocery', categoryId: 'grocery-staples', isVisible: true, order: 3 },
+          { id: 'sec-rice', title: 'Rice', categoryId: 'grocery-staples', isVisible: true, order: 4 },
+          { id: 'sec-dal', title: 'Dal', categoryId: 'grocery-staples', isVisible: true, order: 5 },
+          { id: 'sec-oil', title: 'Oil', categoryId: 'grocery-staples', isVisible: true, order: 6 },
+          { id: 'sec-dairy', title: 'Dairy & Milk', categoryId: 'dairy-bread', isVisible: true, order: 7 },
+          { id: 'sec-snacks', title: 'Snacks', categoryId: 'snacks-munchies', isVisible: true, order: 8 },
+          { id: 'sec-beverages', title: 'Beverages', categoryId: 'beverages', isVisible: true, order: 9 },
+          { id: 'sec-personal', title: 'Personal Care', categoryId: 'personal-care', isVisible: true, order: 10 },
+          { id: 'sec-household', title: 'Household & Essentials', categoryId: 'household', isVisible: true, order: 11 }
+        ];
+        setDoc(doc(db, "homepage", "sections_config"), { list: initialSections })
+          .catch(err => console.warn("Could not seed sections to firestore", err));
+      }
+    }, (error) => {
+      console.warn("Firestore sections read error", error);
+    });
+    return () => unsub();
+  }, []);
+
+  // Real-time sync for categories from Firestore
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "homepage", "categories_config"), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data && Array.isArray(data.list)) {
+          setCustomCategories(data.list);
+          localStorage.setItem("qn_custom_categories", JSON.stringify(data.list));
+        }
+      } else {
+        const initialCats = [
+          { id: 'fruits-veg', name: 'Fruits & Vegetables', icon: 'Apple', color: 'bg-emerald-50 text-emerald-600 border-emerald-100', order: 1 },
+          { id: 'grocery-staples', name: 'Grocery & Staples', icon: 'Wheat', color: 'bg-amber-50 text-amber-600 border-amber-100', order: 2 },
+          { id: 'dairy-bread', name: 'Dairy & Bread', icon: 'Egg', color: 'bg-sky-50 text-sky-600 border-sky-100', order: 3 },
+          { id: 'beverages', name: 'Beverages', icon: 'CupSoda', color: 'bg-purple-50 text-purple-600 border-purple-100', order: 4 },
+          { id: 'snacks-munchies', name: 'Snacks & Munchies', icon: 'Cookie', color: 'bg-orange-50 text-orange-600 border-orange-100', order: 5 },
+          { id: 'personal-care', name: 'Beauty & Care', icon: 'Sparkles', color: 'bg-pink-50 text-pink-600 border-pink-100', order: 6 },
+          { id: 'household', name: 'Household Essentials', icon: 'Home', color: 'bg-teal-50 text-teal-600 border-teal-100', order: 7 },
+          { id: 'baby-care', name: 'Baby Care', icon: 'Baby', color: 'bg-rose-50 text-rose-600 border-rose-100', order: 8 },
+          { id: 'frozen-food', name: 'Frozen Food', icon: 'Snowflake', color: 'bg-cyan-50 text-cyan-600 border-cyan-100', order: 9 },
+          { id: 'medicines', name: 'Medicines', icon: 'HeartPulse', color: 'bg-red-50 text-red-600 border-red-100', order: 10 },
+          { id: 'pet-care', name: 'Pet Care', icon: 'Activity', color: 'bg-indigo-50 text-indigo-600 border-indigo-100', order: 11 },
+          { id: 'electronics', name: 'Electronics', icon: 'Laptop', color: 'bg-violet-50 text-violet-600 border-violet-100', order: 12 }
+        ];
+        setDoc(doc(db, "homepage", "categories_config"), { list: initialCats })
+          .catch(err => console.warn("Could not seed categories to firestore", err));
+      }
+    }, (error) => {
+      console.warn("Firestore categories read error", error);
+    });
+    return () => unsub();
+  }, []);
+
   // Recalculate active deliveryCharge based on current cart subtotal and user's primary address
   useEffect(() => {
     const currentAddress = user?.addresses[0] || "12, Premium Park, Sector 5, Salt Lake, Kolkata";
@@ -367,6 +513,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [language, setLanguageState] = useState<Language>("en");
   const [darkMode, setDarkModeState] = useState<boolean>(false);
   const [isDeliveryOnline, setDeliveryOnline] = useState<boolean>(true);
+  const [deliveryOtpRequired, setDeliveryOtpRequired] = useState<boolean>(() => {
+    const cached = localStorage.getItem("qn_delivery_otp_required");
+    return cached !== null ? JSON.parse(cached) : true;
+  });
+
+  useEffect(() => {
+    localStorage.setItem("qn_delivery_otp_required", JSON.stringify(deliveryOtpRequired));
+  }, [deliveryOtpRequired]);
 
   const [notifications, setNotifications] = useState<Array<{ id: string; title: string; message: string; date: string; read: boolean }>>(() => {
     return [
@@ -545,6 +699,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addToCart = (product: Product, selectedWeight?: number) => {
+    if (!ensureAuthenticated(`add ${product.name} to your cart`)) {
+      return;
+    }
     setCart((prev) => {
       const defaultWeight = product.isWeightBased ? (selectedWeight || product.minWeight || 1) : undefined;
       const existing = prev.find((item) => item.product.id === product.id);
@@ -565,6 +722,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateCartQuantity = (productId: string, quantity: number) => {
+    if (!ensureAuthenticated("update cart quantity")) {
+      return;
+    }
     if (quantity <= 0) {
       removeFromCart(productId);
       return;
@@ -583,6 +743,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const clearCart = () => setCart([]);
 
   const toggleWishlist = (productId: string) => {
+    if (!ensureAuthenticated("manage your wishlist")) {
+      return;
+    }
     setWishlist((prev) => {
       if (prev.includes(productId)) {
         return prev.filter((id) => id !== productId);
@@ -632,6 +795,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Generate standard interactive delivery verify OTP
     const generatedOTP = String(Math.floor(1000 + Math.random() * 9000));
 
+    // Helper to resolve realistic coordinates based on address
+    const getCoordinatesForAddress = (addr: string) => {
+      const lower = addr.toLowerCase();
+      if (lower.includes("sector 5") || lower.includes("salt lake") || lower.includes("premium park")) {
+        // Kolkata Sector V area (e.g. Salt Lake)
+        const offsetLat = (Math.random() - 0.5) * 0.008;
+        const offsetLng = (Math.random() - 0.5) * 0.008;
+        return { lat: 22.5735 + offsetLat, lng: 88.4331 + offsetLng };
+      } else if (lower.includes("cyber city") || lower.includes("gurugram") || lower.includes("gurgaon")) {
+        return { lat: 28.4952 + (Math.random() - 0.5) * 0.005, lng: 77.0878 + (Math.random() - 0.5) * 0.005 };
+      } else if (lower.includes("delhi") || lower.includes("connaught place")) {
+        return { lat: 28.6304 + (Math.random() - 0.5) * 0.005, lng: 77.2177 + (Math.random() - 0.5) * 0.005 };
+      } else if (lower.includes("mumbai") || lower.includes("bandra")) {
+        return { lat: 19.0596 + (Math.random() - 0.5) * 0.005, lng: 72.8295 + (Math.random() - 0.5) * 0.005 };
+      }
+      const offsetLat = (Math.random() - 0.5) * 0.015;
+      const offsetLng = (Math.random() - 0.5) * 0.015;
+      return { lat: 22.5726 + offsetLat, lng: 88.3639 + offsetLng };
+    };
+
+    const coords = getCoordinatesForAddress(address);
+
     const newOrder: Order = {
       id: "QN-" + Math.floor(1000 + Math.random() * 9000),
       customerId: user?.uid || "guest",
@@ -649,7 +834,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       paymentStatus: paymentMethod === "UPI" ? "Paid" : "Pending",
       deliveryOTP: generatedOTP,
       deliveryPartnerId: null,
-      deliveryNotes
+      deliveryNotes,
+      lat: coords.lat,
+      lng: coords.lng
     };
 
     // Update stock levels
@@ -708,7 +895,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateOrderStatus = async (
     orderId: string,
     status: Order["status"],
-    partnerId: string | null = null
+    partnerId?: string | null
   ) => {
     setOrders((prev) =>
       prev.map((o) => {
@@ -974,48 +1161,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addBanner = (b: Banner) => {
     const updated = [...banners, b];
     setBanners(updated);
+    setDoc(doc(db, "homepage", "banners_config"), { list: updated }).catch(console.error);
     localStorage.setItem("qn_banners", JSON.stringify(updated));
   };
   const updateBanner = (id: string, updated: Partial<Banner>) => {
     const updatedBanners = banners.map(b => b.id === id ? { ...b, ...updated } : b);
     setBanners(updatedBanners);
+    setDoc(doc(db, "homepage", "banners_config"), { list: updatedBanners }).catch(console.error);
     localStorage.setItem("qn_banners", JSON.stringify(updatedBanners));
   };
   const deleteBanner = (id: string) => {
     const updated = banners.filter(b => b.id !== id);
     setBanners(updated);
+    setDoc(doc(db, "homepage", "banners_config"), { list: updated }).catch(console.error);
     localStorage.setItem("qn_banners", JSON.stringify(updated));
   };
 
   const addSection = (s: HomepageSection) => {
     const updated = [...homepageSections, s];
     setHomepageSections(updated);
+    setDoc(doc(db, "homepage", "sections_config"), { list: updated }).catch(console.error);
     localStorage.setItem("qn_homepage_sections", JSON.stringify(updated));
   };
   const updateSection = (id: string, updated: Partial<HomepageSection>) => {
     const updatedSections = homepageSections.map(s => s.id === id ? { ...s, ...updated } : s);
     setHomepageSections(updatedSections);
+    setDoc(doc(db, "homepage", "sections_config"), { list: updatedSections }).catch(console.error);
     localStorage.setItem("qn_homepage_sections", JSON.stringify(updatedSections));
   };
   const deleteSection = (id: string) => {
     const updated = homepageSections.filter(s => s.id !== id);
     setHomepageSections(updated);
+    setDoc(doc(db, "homepage", "sections_config"), { list: updated }).catch(console.error);
     localStorage.setItem("qn_homepage_sections", JSON.stringify(updated));
   };
 
   const addCategory = (c: Category) => {
     const updated = [...customCategories, c];
     setCustomCategories(updated);
+    setDoc(doc(db, "homepage", "categories_config"), { list: updated }).catch(console.error);
     localStorage.setItem("qn_custom_categories", JSON.stringify(updated));
   };
   const updateCategory = (id: string, updated: Partial<Category>) => {
     const updatedCats = customCategories.map(c => c.id === id ? { ...c, ...updated } : c);
     setCustomCategories(updatedCats);
+    setDoc(doc(db, "homepage", "categories_config"), { list: updatedCats }).catch(console.error);
     localStorage.setItem("qn_custom_categories", JSON.stringify(updatedCats));
   };
   const deleteCategory = (id: string) => {
     const updated = customCategories.filter(c => c.id !== id);
     setCustomCategories(updated);
+    setDoc(doc(db, "homepage", "categories_config"), { list: updated }).catch(console.error);
     localStorage.setItem("qn_custom_categories", JSON.stringify(updated));
   };
 
@@ -1026,6 +1222,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         loginAs,
         logout,
         cart,
+        setCart,
         addToCart,
         removeFromCart,
         updateCartQuantity,
@@ -1088,6 +1285,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addCategory,
         updateCategory,
         deleteCategory,
+        showLoginPrompt,
+        setShowLoginPrompt,
+        loginPromptReason,
+        setLoginPromptReason,
+        ensureAuthenticated,
+        deliveryOtpRequired,
+        setDeliveryOtpRequired,
       }}
     >
       {children}

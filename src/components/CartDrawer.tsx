@@ -143,15 +143,15 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden">
+    <div className="fixed inset-0 z-[100] overflow-hidden">
       {/* Backdrop */}
       <div 
         onClick={onClose}
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity animate-in fade-in duration-200"
       />
 
       {/* Main Drawer Shell */}
-      <div className="absolute inset-y-0 right-0 max-w-md w-full bg-zinc-50 shadow-2xl flex flex-col justify-between">
+      <div className="absolute inset-y-0 right-0 max-w-md w-full bg-zinc-50 shadow-2xl flex flex-col justify-between animate-in slide-in-from-right duration-300">
         
         {/* Header */}
         <div className="px-5 py-4 border-b border-zinc-100 bg-white flex items-center justify-between">
@@ -367,34 +367,51 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               </div>
 
               {/* Payment Methods */}
-              <div className="bg-white rounded-2xl p-4 border border-zinc-100 space-y-3 shadow-sm">
-                <p className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">Select Payment Option</p>
+              <div className="bg-white rounded-2xl p-4 border border-zinc-100 space-y-3.5 shadow-sm">
+                <div className="flex justify-between items-center">
+                  <p className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">Select Payment Option</p>
+                  <span className="text-[9px] font-bold text-zinc-400 bg-zinc-50 border border-zinc-100 px-2 py-0.5 rounded-full">Secure Gateway</span>
+                </div>
                 
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
                     onClick={() => setPaymentMethod("COD")}
-                    className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition cursor-pointer ${
+                    className={`p-4 rounded-xl border text-left flex flex-col justify-between transition-all duration-200 cursor-pointer relative overflow-hidden group select-none active:scale-[0.98] ${
                       paymentMethod === "COD"
-                        ? "border-orange-500 bg-orange-50/50 text-orange-700"
-                        : "border-zinc-100 text-zinc-600 hover:bg-zinc-50"
+                        ? "border-emerald-600 bg-emerald-50/40 text-emerald-900 shadow-sm shadow-emerald-500/5"
+                        : "border-zinc-150 text-zinc-600 bg-white hover:bg-zinc-50 hover:border-zinc-300"
                     }`}
                   >
-                    <span className="text-xs font-extrabold">Cash On Delivery</span>
-                    <span className="text-[9px] text-zinc-400 mt-1 font-bold">Pay rider upon delivery</span>
+                    {/* Visual accent bar */}
+                    {paymentMethod === "COD" && (
+                      <div className="absolute top-0 left-0 right-0 h-1 bg-emerald-600" />
+                    )}
+                    <div className="flex items-center gap-1.5 justify-between w-full">
+                      <span className="text-xs font-black">Cash On Delivery</span>
+                      <Truck className={`w-4 h-4 transition-transform duration-300 ${paymentMethod === "COD" ? "text-emerald-600 scale-110" : "text-zinc-400 group-hover:translate-x-0.5"}`} />
+                    </div>
+                    <span className="text-[9px] text-zinc-400 mt-2 font-bold block leading-snug">Pay rider upon safe delivery</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setPaymentMethod("UPI")}
-                    className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition cursor-pointer ${
+                    className={`p-4 rounded-xl border text-left flex flex-col justify-between transition-all duration-200 cursor-pointer relative overflow-hidden group select-none active:scale-[0.98] ${
                       paymentMethod === "UPI"
-                        ? "border-blue-600 bg-blue-50/50 text-blue-700"
-                        : "border-zinc-100 text-zinc-600 hover:bg-zinc-50"
+                        ? "border-blue-600 bg-blue-50/40 text-blue-900 shadow-sm shadow-blue-500/5"
+                        : "border-zinc-150 text-zinc-600 bg-white hover:bg-zinc-50 hover:border-zinc-300"
                     }`}
                   >
-                    <span className="text-xs font-extrabold">Instant UPI Scan</span>
-                    <span className="text-[9px] text-blue-600 font-bold mt-1">Recommended & safe</span>
+                    {/* Visual accent bar */}
+                    {paymentMethod === "UPI" && (
+                      <div className="absolute top-0 left-0 right-0 h-1 bg-blue-600" />
+                    )}
+                    <div className="flex items-center gap-1.5 justify-between w-full">
+                      <span className="text-xs font-black">Instant UPI Scan</span>
+                      <Smartphone className={`w-4 h-4 transition-transform duration-300 ${paymentMethod === "UPI" ? "text-blue-600 scale-110" : "text-zinc-400 group-hover:scale-105"}`} />
+                    </div>
+                    <span className="text-[9px] text-blue-600 mt-2 font-extrabold block leading-snug">Recommended & 100% safe</span>
                   </button>
                 </div>
               </div>
@@ -449,14 +466,20 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             <button
               onClick={handleCheckout}
               disabled={isProcessing}
-              className="w-full py-4 bg-orange-500 hover:bg-orange-600 text-white font-black text-sm rounded-2xl transition shadow-xl shadow-orange-500/25 flex items-center justify-between px-5 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.99] cursor-pointer"
+              className={`w-full py-4 text-white font-black text-sm rounded-2xl transition-all duration-300 flex items-center justify-between px-5 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] cursor-pointer ${
+                paymentMethod === "UPI"
+                  ? "bg-blue-600 hover:bg-blue-700 shadow-xl shadow-blue-500/20"
+                  : "bg-emerald-600 hover:bg-emerald-700 shadow-xl shadow-emerald-500/20"
+              }`}
             >
               <div className="text-left">
-                <span className="block text-[10px] text-orange-100 uppercase tracking-widest font-bold">PAY USING {paymentMethod}</span>
-                <span>₹{finalTotal}</span>
+                <span className="block text-[10px] uppercase tracking-widest font-extrabold opacity-90">
+                  {paymentMethod === "UPI" ? "⚡ Pay Via Instant UPI" : "🤝 Cash On Delivery"}
+                </span>
+                <span className="text-base font-black">₹{finalTotal}</span>
               </div>
-              <div className="flex items-center gap-1.5 font-bold">
-                <span>{isProcessing ? "Placing..." : "Place Order"}</span>
+              <div className="flex items-center gap-2 font-black">
+                <span>{isProcessing ? "Processing..." : paymentMethod === "UPI" ? "Scan QR & Pay" : "Confirm & Place Order"}</span>
                 <ArrowRight className="w-4 h-4 animate-pulse" />
               </div>
             </button>
@@ -468,7 +491,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
       {/* --- UPI Simulated Payment Screen Overlay --- */}
       {showUPIScreen && (
-        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[110] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 max-w-sm w-full border border-zinc-100 shadow-2xl text-center space-y-6 animate-in zoom-in-95 duration-150">
             
             <div className="flex items-center justify-between pb-3 border-b border-zinc-100">

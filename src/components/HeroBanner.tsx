@@ -1,193 +1,208 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useApp } from "../context/AppContext";
-import { Sparkles, Gift, Flame, Percent, Smartphone, ArrowRight, Share2, Copy, Check } from "lucide-react";
+import { 
+  Sparkles, Smartphone, ArrowRight, Check, Zap, Calendar, ChevronLeft, ChevronRight
+} from "lucide-react";
 
-export const HeroBanner: React.FC = () => {
-  const { language, addNotification } = useApp();
+interface HeroBannerProps {
+  onSelectCategory?: (id: string) => void;
+}
+
+export const HeroBanner: React.FC<HeroBannerProps> = ({ onSelectCategory }) => {
+  const { banners, addNotification } = useApp() as any;
   const [currentSlide, setCurrentSlide] = useState(0);
-  const [countdown, setCountdown] = useState({ hours: 2, minutes: 44, seconds: 12 });
-  const [copiedReferral, setCopiedReferral] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  
+  // Touch Swiping variables
+  const touchStartX = useRef<number | null>(null);
+  const touchEndX = useRef<number | null>(null);
 
-  // Countdown timer simulation for Flash Sale
+  // Filter only enabled banners
+  const activeBanners = (banners || []).filter((b: any) => b.isEnabled !== false);
+
+  // Auto-slide every 4 seconds unless paused
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev.seconds > 0) {
-          return { ...prev, seconds: prev.seconds - 1 };
-        } else if (prev.minutes > 0) {
-          return { hours: prev.hours, minutes: prev.minutes - 1, seconds: 59 };
-        } else if (prev.hours > 0) {
-          return { hours: prev.hours - 1, minutes: 59, seconds: 59 };
-        } else {
-          return { hours: 2, minutes: 59, seconds: 59 }; // reset
-        }
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
+    if (activeBanners.length <= 1 || isPaused) return;
+    const interval = setInterval(() => {
+      setCurrentSlide((prev) => (prev + 1) % activeBanners.length);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [activeBanners.length, isPaused]);
 
-  const banners = [
-    {
-      title: "Super Saver Grocery Deals",
-      tagline: "UP TO 50% OFF",
-      desc: "Farm fresh organic apples, avocados & daily essentials delivered in 10 minutes flat.",
-      bg: "from-blue-600 to-indigo-700",
-      accent: "text-amber-300",
-      btnText: "Shop Fresh Fruits",
-      badge: "Organic Freshness"
-    },
-    {
-      title: "Gourmet Dairy & Artisanal Bakeries",
-      tagline: "FRESH EVERY MORNING",
-      desc: "Whole milk, creamier local paneer, premium butter, and authentic sourdough loaves.",
-      bg: "from-amber-400 to-orange-500",
-      accent: "text-white",
-      btnText: "Explore Dairy",
-      badge: "Artisanal Bakeries"
-    },
-    {
-      title: "Summer Chills & Hydration Station",
-      tagline: "FLAT 20% OFF",
-      desc: "Cold-pressed juices, premium Japanese matcha green tea & imported sparkling water.",
-      bg: "from-sky-500 to-indigo-600",
-      accent: "text-yellow-300",
-      btnText: "Order Drinks",
-      badge: "Summer Specials"
+  const handleNextSlide = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (activeBanners.length === 0) return;
+    setCurrentSlide((prev) => (prev + 1) % activeBanners.length);
+  };
+
+  const handlePrevSlide = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (activeBanners.length === 0) return;
+    setCurrentSlide((prev) => (prev - 1 + activeBanners.length) % activeBanners.length);
+  };
+
+  // Swipe handlers for Mobile
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.targetTouches[0].clientX;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    touchEndX.current = e.targetTouches[0].clientX;
+  };
+
+  const handleTouchEnd = () => {
+    if (!touchStartX.current || !touchEndX.current) return;
+    const difference = touchStartX.current - touchEndX.current;
+    const swipeThreshold = 50; // minimum distance to trigger a swipe
+
+    if (difference > swipeThreshold) {
+      handleNextSlide(); // Swipe Left -> Go to Next Slide
+    } else if (difference < -swipeThreshold) {
+      handlePrevSlide(); // Swipe Right -> Go to Prev Slide
     }
-  ];
 
-  const handleCopyCode = () => {
-    setCopiedReferral(true);
-    navigator.clipboard.writeText("QUICK_SUBH_77");
-    addNotification("Referral Code Copied", "Share QUICK_SUBH_77 to invite friends and earn rewards!");
-    setTimeout(() => setCopiedReferral(false), 2000);
+    // Reset touch variables
+    touchStartX.current = null;
+    touchEndX.current = null;
+  };
+
+  const handleBannerClick = (banner: any) => {
+    if (banner.categoryId && onSelectCategory) {
+      onSelectCategory(banner.categoryId);
+      addNotification("Category Selected", `Browsing deals in ${banner.title || "Category"}`);
+    }
   };
 
   return (
     <div className="space-y-6">
       
-      {/* PWA banner prompt */}
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white px-4 py-2 text-xs font-bold rounded-xl flex items-center justify-between shadow-lg shadow-blue-500/10 gap-3">
-        <div className="flex items-center gap-2">
-          <Smartphone className="w-4.5 h-4.5 animate-bounce" />
-          <span>Install QuickNow PWA on your home screen for 1-click lightning checkout!</span>
+      {/* ⚡ PWA install promotional banner */}
+      <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-700 text-white px-4 sm:px-6 py-3 text-xs font-bold rounded-2xl flex flex-col sm:flex-row items-center justify-between shadow-xl shadow-blue-500/15 gap-3 border border-white/10 relative overflow-hidden select-none">
+        {/* Glow circle background */}
+        <div className="absolute top-0 right-12 w-24 h-24 bg-white/5 rounded-full blur-xl pointer-events-none" />
+        
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center animate-bounce">
+            <Smartphone className="w-4.5 h-4.5 text-amber-300" />
+          </div>
+          <div className="text-center sm:text-left">
+            <span className="block sm:inline font-black tracking-tight text-white text-xs sm:text-sm">Lightning-Fast 1-Click Ordering</span>
+            <span className="block sm:inline text-zinc-200 font-medium sm:ml-2">Install our QuickNow PWA app on your phone's home screen!</span>
+          </div>
         </div>
         <button 
-          onClick={() => addNotification("PWA Installed", "QuickNow progressive application added successfully.")}
-          className="bg-white text-blue-750 px-3 py-1 rounded-lg font-black tracking-tight hover:bg-blue-50 transition cursor-pointer"
+          onClick={() => addNotification("PWA Setup", "PWA is ready. Click the browser install prompt to confirm.")}
+          className="bg-amber-400 text-zinc-950 px-4 py-1.5 rounded-xl font-black text-[10px] sm:text-xs tracking-tight hover:bg-amber-300 active:scale-95 transition shadow-md shadow-amber-400/20 cursor-pointer w-full sm:w-auto"
         >
-          INSTALL NOW
+          INSTALL APP
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="w-full">
         
-        {/* Main Banner Slider */}
-        <div className="lg:col-span-2 relative overflow-hidden rounded-3xl bg-gradient-to-r transition-all duration-500 shadow-xl shadow-zinc-100">
-          {/* Slides */}
-          <div className={`p-8 sm:p-10 h-64 sm:h-80 bg-gradient-to-br ${banners[currentSlide].bg} text-white flex flex-col justify-between relative`}>
-            {/* Decors */}
-            <div className="absolute right-0 bottom-0 top-0 w-1/3 opacity-15 pointer-events-none flex items-center justify-center">
-              <Sparkles className="w-32 h-32" />
+        {/* Banner Carousel Slider */}
+        <div 
+          className="w-full relative overflow-hidden rounded-[32px] shadow-xl shadow-zinc-100 group border border-zinc-100 select-none"
+          onMouseEnter={() => setIsPaused(true)}
+          onMouseLeave={() => setIsPaused(false)}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          {activeBanners.length === 0 ? (
+            <div className="p-8 h-64 sm:h-80 bg-gradient-to-br from-zinc-800 to-zinc-950 text-white flex flex-col justify-center items-center text-center">
+              <Sparkles className="w-12 h-12 text-zinc-500 mb-2 animate-pulse" />
+              <p className="font-bold text-sm">No Active Promotional Banners</p>
+              <p className="text-xs text-zinc-400">Configure banners in the Admin Panel to display promotions here.</p>
             </div>
+          ) : (
+            <div className="relative h-64 sm:h-80 w-full overflow-hidden">
+              {activeBanners.map((banner: any, idx: number) => {
+                const isSelected = currentSlide === idx;
+                return (
+                  <div
+                    key={banner.id || idx}
+                    onClick={() => handleBannerClick(banner)}
+                    className={`absolute inset-0 p-6 sm:p-10 text-white flex flex-col justify-between transition-all duration-700 ease-in-out cursor-pointer ${
+                      isSelected ? "opacity-100 translate-x-0 scale-100" : "opacity-0 translate-x-full scale-95 pointer-events-none"
+                    } bg-gradient-to-br ${banner.bg || "from-blue-600 to-indigo-700"}`}
+                  >
+                    {/* Visual Decor Elements */}
+                    <div className="absolute right-0 bottom-0 top-0 w-1/2 opacity-10 pointer-events-none flex items-center justify-center">
+                      <Sparkles className="w-48 h-48 animate-pulse" />
+                    </div>
 
-            <div className="space-y-3 max-w-md">
-              <span className="inline-block bg-white/20 backdrop-blur px-3 py-1 rounded-full text-xs font-black tracking-wider uppercase">
-                {banners[currentSlide].badge}
-              </span>
-              <h2 className="text-2xl sm:text-4xl font-extrabold tracking-tight leading-tight">
-                {banners[currentSlide].title}
-              </h2>
-              <p className="text-zinc-100 text-xs sm:text-sm font-medium leading-relaxed">
-                {banners[currentSlide].desc}
-              </p>
+                    <div className="space-y-3.5 max-w-lg z-10">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-block bg-white/25 backdrop-blur px-3 py-1 rounded-full text-[9px] font-black tracking-widest uppercase border border-white/10">
+                          {banner.badge || "Deal of the Day"}
+                        </span>
+                        {banner.startDate && (
+                          <span className="text-[9px] text-white/70 font-semibold flex items-center gap-1">
+                            <Calendar className="w-3 h-3" /> Scheduled Promo
+                          </span>
+                        )}
+                      </div>
+                      <h2 className="text-2xl sm:text-4xl font-black tracking-tight leading-none drop-shadow-sm">
+                        {banner.title}
+                      </h2>
+                      <p className="text-zinc-100 text-xs sm:text-sm font-semibold leading-relaxed line-clamp-2 max-w-md opacity-90">
+                        {banner.desc}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-between z-10">
+                      <div className="flex items-center gap-4">
+                        <span className="text-lg sm:text-2xl font-black tracking-tight uppercase bg-yellow-400 text-zinc-950 px-3 py-1 rounded-xl shadow-sm rotate-[-1deg]">
+                          {banner.tagline || "FLAT OFF"}
+                        </span>
+                        <button className="flex items-center gap-1.5 bg-white hover:bg-zinc-100 active:scale-95 text-zinc-950 font-black text-xs px-4 py-3 rounded-full transition shadow-lg cursor-pointer">
+                          <span>{banner.btnText || "Shop Now"}</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Slider Left & Right Arrows (Hidden on Mobile) */}
+              {activeBanners.length > 1 && (
+                <>
+                  <button
+                    onClick={handlePrevSlide}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/20 flex items-center justify-center text-white hover:bg-white/40 active:scale-90 transition opacity-0 group-hover:opacity-100 cursor-pointer z-20"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={handleNextSlide}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/20 flex items-center justify-center text-white hover:bg-white/40 active:scale-90 transition opacity-0 group-hover:opacity-100 cursor-pointer z-20"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </>
+              )}
+
+              {/* Slider Dots Indicator */}
+              {activeBanners.length > 1 && (
+                <div className="absolute right-8 bottom-8 flex items-center gap-2 z-20">
+                  {activeBanners.map((_: any, idx: number) => (
+                    <button
+                      key={idx}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCurrentSlide(idx);
+                      }}
+                      className={`h-2.5 rounded-full transition-all duration-300 ${
+                        currentSlide === idx ? "w-6 bg-white" : "w-2.5 bg-white/40 hover:bg-white/60"
+                      }`}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
-
-            <div className="flex items-center gap-4">
-              <span className={`text-xl sm:text-2xl font-black ${banners[currentSlide].accent}`}>
-                {banners[currentSlide].tagline}
-              </span>
-              <button className="flex items-center gap-1 bg-white hover:bg-zinc-100 text-zinc-900 font-extrabold text-xs px-4 py-2.5 rounded-full transition shadow-md cursor-pointer">
-                {banners[currentSlide].btnText}
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Dots Indicator */}
-          <div className="absolute right-6 bottom-6 flex items-center gap-1.5 z-10">
-            {banners.map((_, idx) => (
-              <button
-                key={idx}
-                onClick={() => setCurrentSlide(idx)}
-                className={`w-2.5 h-2.5 rounded-full transition ${
-                  currentSlide === idx ? "bg-white scale-125" : "bg-white/40"
-                }`}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Dynamic Referral Card & Flash counter */}
-        <div className="space-y-4 flex flex-col justify-between">
-          
-          {/* Flash Sale Banner */}
-          <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex flex-col justify-between h-[48%] shadow-sm">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-amber-600">
-                <Flame className="w-5 h-5 fill-amber-500 text-amber-500 animate-pulse" />
-                <span className="font-extrabold text-sm uppercase tracking-wide">FLASH SALE</span>
-              </div>
-              <span className="text-[10px] bg-amber-500 text-white px-2 py-0.5 rounded-full font-bold">LIVE</span>
-            </div>
-            
-            <p className="text-xs font-medium text-zinc-600 mt-2">
-              Limited-edition deals ending in:
-            </p>
-
-            <div className="flex items-center gap-2 mt-2">
-              <div className="bg-amber-500/10 text-amber-700 font-black text-lg px-2.5 py-1.5 rounded-xl border border-amber-200 min-w-[42px] text-center">
-                {String(countdown.hours).padStart(2, "0")}h
-              </div>
-              <span className="font-black text-amber-500">:</span>
-              <div className="bg-amber-500/10 text-amber-700 font-black text-lg px-2.5 py-1.5 rounded-xl border border-amber-200 min-w-[42px] text-center">
-                {String(countdown.minutes).padStart(2, "0")}m
-              </div>
-              <span className="font-black text-amber-500">:</span>
-              <div className="bg-amber-500/10 text-amber-700 font-black text-lg px-2.5 py-1.5 rounded-xl border border-amber-200 min-w-[42px] text-center">
-                {String(countdown.seconds).padStart(2, "0")}s
-              </div>
-            </div>
-
-            <p className="text-[10px] text-amber-600 font-semibold mt-1">
-              *Hurry! Maximum 1 per customer on all flash products.
-            </p>
-          </div>
-
-          {/* Referral Card */}
-          <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 flex flex-col justify-between h-[48%] shadow-sm">
-            <div className="flex items-center gap-1.5 text-blue-600">
-              <Gift className="w-5 h-5 text-orange-500 fill-orange-500/10" />
-              <span className="font-extrabold text-sm uppercase tracking-wide">Invite & Earn ₹50</span>
-            </div>
-
-            <p className="text-[11px] text-zinc-500 leading-relaxed mt-1.5">
-              Share your premium code to gift <strong>₹50</strong> discount and earn <strong>100 points</strong> once they place their first order.
-            </p>
-
-            <div className="flex items-center justify-between bg-white border border-blue-200 rounded-xl p-2 mt-2 gap-2">
-              <span className="font-mono text-xs font-extrabold text-blue-700 uppercase tracking-widest pl-1.5">
-                QUICK_SUBH_77
-              </span>
-              <button
-                onClick={handleCopyCode}
-                className="bg-blue-600 hover:bg-blue-700 text-white p-1.5 rounded-lg transition cursor-pointer"
-              >
-                {copiedReferral ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              </button>
-            </div>
-          </div>
-
+          )}
         </div>
 
       </div>
