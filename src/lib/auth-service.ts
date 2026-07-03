@@ -1,11 +1,4 @@
-import { 
-  createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword, 
-  signOut, 
-  updateProfile,
-  signInWithPopup,
-  GoogleAuthProvider
-} from "firebase/auth";
+import { updateProfile } from "firebase/auth";
 import { 
   collection, 
   doc, 
@@ -19,8 +12,20 @@ import {
   serverTimestamp, 
   getDocFromServer 
 } from "firebase/firestore";
-import { auth, db, handleFirestoreError, OperationType } from "./firebase";
-import { UserProfile, StructuredAddress } from "../types";
+import { 
+  auth, 
+  db, 
+  handleFirestoreError, 
+  OperationType,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  signInWithPopup,
+  GoogleAuthProvider,
+  getPendingMockPassword,
+  cleanUndefined
+} from "./firebase";
+import { UserProfile, StructuredAddress, UserRole } from "../types";
 
 // Helper to generate an unique customer ID
 export function generateRandomCustomerId(): string {
@@ -37,7 +42,8 @@ export function generateReferralCode(name: string): string {
 
 // Duplicate Mobile check
 export async function isMobileRegistered(phone: string): Promise<boolean> {
-  const path = "users";
+  if (!phone || !phone.trim()) return false;
+  const path = "customers";
   try {
     const q = query(collection(db, path), where("phone", "==", phone.trim()));
     const snapshot = await getDocs(q);
@@ -51,7 +57,7 @@ export async function isMobileRegistered(phone: string): Promise<boolean> {
 // Duplicate Email check
 export async function isEmailRegistered(email: string): Promise<boolean> {
   if (!email || !email.trim()) return false;
-  const path = "users";
+  const path = "customers";
   try {
     const q = query(collection(db, path), where("email", "==", email.trim().toLowerCase()));
     const snapshot = await getDocs(q);
@@ -62,11 +68,29 @@ export async function isEmailRegistered(email: string): Promise<boolean> {
   }
 }
 
+// Get email of customer registered with a given phone number
+export async function getEmailByPhone(phone: string): Promise<string | null> {
+  if (!phone || !phone.trim()) return null;
+  const path = "customers";
+  try {
+    const q = query(collection(db, path), where("phone", "==", phone.trim()));
+    const snapshot = await getDocs(q);
+    if (!snapshot.empty) {
+      const data = snapshot.docs[0].data();
+      return data.email || null;
+    }
+    return null;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+    return null;
+  }
+}
+
 // Get single User Profile
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
-  const path = `users/${uid}`;
+  const path = `customers/${uid}`;
   try {
-    const docRef = doc(db, "users", uid);
+    const docRef = doc(db, "customers", uid);
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
       return docSnap.data() as UserProfile;
@@ -82,7 +106,7 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
 export async function createUserProfile(profile: Partial<UserProfile>): Promise<UserProfile> {
   const uid = profile.uid;
   if (!uid) throw new Error("UID is required to create a user profile.");
-  const path = `users/${uid}`;
+  const path = `customers/${uid}`;
 
   const customerId = generateRandomCustomerId();
   const referralCode = generateReferralCode(profile.name || "USER");
@@ -92,7 +116,7 @@ export async function createUserProfile(profile: Partial<UserProfile>): Promise<
     name: profile.name || "Premium Customer",
     email: profile.email || `${profile.phone?.replace(/[^0-9]/g, "")}@quicknow.com`,
     phone: profile.phone || "",
-    role: "customer",
+    role: profile.role || "customer",
     walletBalance: profile.walletBalance || 0,
     loyaltyPoints: profile.loyaltyPoints || 0,
     addresses: profile.addresses || [],
@@ -109,10 +133,14 @@ export async function createUserProfile(profile: Partial<UserProfile>): Promise<
     savedProducts: []
   };
 
+  const emailKey = (profile.email || "").trim().toLowerCase();
+  const mockPassword = getPendingMockPassword(emailKey) || (profile as any).password;
+
   try {
     // Save to Firestore with server timestamp metadata
-    await setDoc(doc(db, "users", uid), {
+    await setDoc(doc(db, "customers", uid), {
       ...fullProfile,
+      ...(mockPassword ? { password: mockPassword } : {}),
       createdAt: serverTimestamp(),
       lastLogin: serverTimestamp()
     });
@@ -125,9 +153,9 @@ export async function createUserProfile(profile: Partial<UserProfile>): Promise<
 
 // Update User Profile
 export async function updateUserProfile(uid: string, updates: Partial<UserProfile>): Promise<void> {
-  const path = `users/${uid}`;
+  const path = `customers/${uid}`;
   try {
-    const docRef = doc(db, "users", uid);
+    const docRef = doc(db, "customers", uid);
     await updateDoc(docRef, {
       ...updates,
       lastLogin: new Date().toISOString() // update timestamp
@@ -139,9 +167,9 @@ export async function updateUserProfile(uid: string, updates: Partial<UserProfil
 
 // Fetch user addresses from subcollection
 export async function getStructuredAddresses(uid: string): Promise<StructuredAddress[]> {
-  const path = `users/${uid}/addresses`;
+  const path = `customers/${uid}/addresses`;
   try {
-    const snapshot = await getDocs(collection(db, "users", uid, "addresses"));
+    const snapshot = await getDocs(collection(db, "customers", uid, "addresses"));
     const list: StructuredAddress[] = [];
     snapshot.forEach((d) => {
       list.push(d.data() as StructuredAddress);
@@ -155,10 +183,10 @@ export async function getStructuredAddresses(uid: string): Promise<StructuredAdd
 
 // Add/Update structured address
 export async function saveStructuredAddress(uid: string, address: StructuredAddress): Promise<void> {
-  const path = `users/${uid}/addresses/${address.id}`;
+  const path = `customers/${uid}/addresses/${address.id}`;
   try {
-    const addrRef = doc(db, "users", uid, "addresses", address.id);
-    await setDoc(addrRef, address);
+    const addrRef = doc(db, "customers", uid, "addresses", address.id);
+    await setDoc(addrRef, cleanUndefined(address));
 
     // Sync to user.addresses simple list for backwards compatibility
     const profile = await getUserProfile(uid);
@@ -169,7 +197,7 @@ export async function saveStructuredAddress(uid: string, address: StructuredAddr
       if (address.isDefault) {
         for (const addr of currentStructured) {
           if (addr.id !== address.id && addr.isDefault) {
-            await updateDoc(doc(db, "users", uid, "addresses", addr.id), { isDefault: false });
+            await updateDoc(doc(db, "customers", uid, "addresses", addr.id), { isDefault: false });
           }
         }
       }
@@ -179,7 +207,7 @@ export async function saveStructuredAddress(uid: string, address: StructuredAddr
         `${addr.type}: ${addr.houseFlat}, ${addr.buildingName ? addr.buildingName + ", " : ""}${addr.streetArea}, ${addr.city}, ${addr.state} - ${addr.pinCode}`
       );
 
-      await updateDoc(doc(db, "users", uid), {
+      await updateDoc(doc(db, "customers", uid), {
         addresses: simpleList,
         structuredAddresses: updatedStructured
       });
@@ -191,9 +219,9 @@ export async function saveStructuredAddress(uid: string, address: StructuredAddr
 
 // Delete structured address
 export async function deleteStructuredAddress(uid: string, addressId: string): Promise<void> {
-  const path = `users/${uid}/addresses/${addressId}`;
+  const path = `customers/${uid}/addresses/${addressId}`;
   try {
-    await deleteDoc(doc(db, "users", uid, "addresses", addressId));
+    await deleteDoc(doc(db, "customers", uid, "addresses", addressId));
 
     // Update parent list
     const updatedStructured = await getStructuredAddresses(uid);
@@ -201,7 +229,7 @@ export async function deleteStructuredAddress(uid: string, addressId: string): P
       `${addr.type}: ${addr.houseFlat}, ${addr.buildingName ? addr.buildingName + ", " : ""}${addr.streetArea}, ${addr.city}, ${addr.state} - ${addr.pinCode}`
     );
 
-    await updateDoc(doc(db, "users", uid), {
+    await updateDoc(doc(db, "customers", uid), {
       addresses: simpleList,
       structuredAddresses: updatedStructured
     });
@@ -212,9 +240,9 @@ export async function deleteStructuredAddress(uid: string, addressId: string): P
 
 // Fetch all registered customers (for Admin Panel)
 export async function getAllCustomers(): Promise<UserProfile[]> {
-  const path = "users";
+  const path = "customers";
   try {
-    const snapshot = await getDocs(collection(db, "users"));
+    const snapshot = await getDocs(collection(db, "customers"));
     const list: UserProfile[] = [];
     snapshot.forEach((d) => {
       const data = d.data();
@@ -233,9 +261,9 @@ export async function getAllCustomers(): Promise<UserProfile[]> {
 // Admin block/unblock customer
 export async function toggleCustomerStatus(uid: string, currentStatus: "Active" | "Blocked"): Promise<"Active" | "Blocked"> {
   const newStatus = currentStatus === "Active" ? "Blocked" : "Active";
-  const path = `users/${uid}`;
+  const path = `customers/${uid}`;
   try {
-    await updateDoc(doc(db, "users", uid), { status: newStatus });
+    await updateDoc(doc(db, "customers", uid), { status: newStatus });
     return newStatus;
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
@@ -245,9 +273,9 @@ export async function toggleCustomerStatus(uid: string, currentStatus: "Active" 
 
 // Admin delete customer
 export async function adminDeleteCustomer(uid: string): Promise<void> {
-  const path = `users/${uid}`;
+  const path = `customers/${uid}`;
   try {
-    await deleteDoc(doc(db, "users", uid));
+    await deleteDoc(doc(db, "customers", uid));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
     throw error;
@@ -256,9 +284,9 @@ export async function adminDeleteCustomer(uid: string): Promise<void> {
 
 // Admin update reward/wallet balance
 export async function adminUpdateCustomerBalances(uid: string, wallet: number, points: number): Promise<void> {
-  const path = `users/${uid}`;
+  const path = `customers/${uid}`;
   try {
-    await updateDoc(doc(db, "users", uid), {
+    await updateDoc(doc(db, "customers", uid), {
       walletBalance: wallet,
       loyaltyPoints: points
     });
@@ -267,3 +295,31 @@ export async function adminUpdateCustomerBalances(uid: string, wallet: number, p
     throw error;
   }
 }
+
+// Admin onboard/create system accounts (Admin, Delivery, Seller, Customer)
+export async function adminCreateSystemAccount(
+  email: string,
+  password: string,
+  name: string,
+  phone: string,
+  role: UserRole,
+  walletBalance: number = 0
+): Promise<UserProfile> {
+  // 1. Create firebase auth credentials
+  const cred = await createUserWithEmailAndPassword(auth, email, password);
+  const uid = cred.user.uid;
+
+  // 2. Setup user profile
+  const profile = await createUserProfile({
+    uid,
+    name,
+    email,
+    phone,
+    role,
+    walletBalance,
+    loyaltyPoints: role === "customer" ? 50 : 0
+  });
+
+  return profile;
+}
+

@@ -2,6 +2,8 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import { GoogleGenAI } from "@google/genai";
+import Razorpay from "razorpay";
+import crypto from "crypto";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,6 +26,89 @@ function getAIClient(): GoogleGenAI | null {
   }
   return aiClient;
 }
+
+// Lazy-initialized Razorpay Client
+let razorpayClient: any = null;
+function getRazorpayClient(): any {
+  const keyId = process.env.RAZORPAY_KEY_ID;
+  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+  
+  if (!keyId || !keySecret) {
+    console.warn("Razorpay environment variables are missing (RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET).");
+    throw new Error("Razorpay payment gateway credentials are not configured. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.");
+  }
+  
+  if (!razorpayClient) {
+    const RazorpayConstructor = (Razorpay as any).default || Razorpay;
+    razorpayClient = new RazorpayConstructor({
+      key_id: keyId,
+      key_secret: keySecret,
+    });
+  }
+  return razorpayClient;
+}
+
+// API: Get public Razorpay Key ID
+app.get("/api/razorpay-key", (req, res) => {
+  res.json({ keyId: process.env.RAZORPAY_KEY_ID || "" });
+});
+
+// API: Create a Razorpay Order
+app.post("/api/razorpay/create-order", async (req, res) => {
+  try {
+    const { amount, receipt } = req.body;
+    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+      return res.status(400).json({ error: "Invalid amount specified." });
+    }
+
+    const razorpay = getRazorpayClient();
+    const options = {
+      amount: Math.round(Number(amount) * 100), // convert rupees to paise
+      currency: "INR",
+      receipt: receipt || `receipt_order_${Date.now()}`,
+    };
+
+    const order = await razorpay.orders.create(options);
+    return res.json({
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency,
+    });
+  } catch (error: any) {
+    console.error("Error creating Razorpay order:", error);
+    return res.status(500).json({ error: error.message || "Failed to create payment order" });
+  }
+});
+
+// API: Verify Razorpay Payment Signature
+app.post("/api/razorpay/verify-signature", async (req, res) => {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return res.status(400).json({ error: "Missing required payment fields for verification." });
+    }
+
+    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+    if (!keySecret) {
+      return res.status(500).json({ error: "Razorpay server configuration is missing." });
+    }
+
+    const body = razorpay_order_id + "|" + razorpay_payment_id;
+    const expectedSignature = crypto
+      .createHmac("sha256", keySecret)
+      .update(body.toString())
+      .digest("hex");
+
+    if (expectedSignature === razorpay_signature) {
+      return res.json({ status: "verified" });
+    } else {
+      return res.status(400).json({ error: "Signature verification failed. The payment might be illegitimate." });
+    }
+  } catch (error: any) {
+    console.error("Signature verification error:", error);
+    return res.status(500).json({ error: error.message || "Verification error occurred" });
+  }
+});
 
 // API: AI Product Recommendations
 app.post("/api/ai-recommendations", async (req, res) => {

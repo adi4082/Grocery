@@ -47,11 +47,11 @@
     }
   },
   "firestore": {
-    "/users/{userId}": {
+    "/customers/{userId}": {
       "schema": "UserProfile",
       "description": "User profiles collection indexed by Auth UID"
     },
-    "/users/{userId}/addresses/{addressId}": {
+    "/customers/{userId}/addresses/{addressId}": {
       "schema": "Address",
       "description": "Subcollection of structured delivery addresses for each user"
     }

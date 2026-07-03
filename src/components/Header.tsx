@@ -25,12 +25,29 @@ export const Header: React.FC<HeaderProps> = ({
   onSearch
 }) => {
   const { 
-    user, logout, loginAs, cart, wishlist, language, setLanguage, 
+    user, logout, cart, wishlist, language, setLanguage, 
     notifications, markNotificationsAsRead, coupons 
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState("");
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
+  const mobileSearchInputRef = React.useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "/" && document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "TEXTAREA") {
+        e.preventDefault();
+        if (window.innerWidth >= 1024) {
+          searchInputRef.current?.focus();
+        } else {
+          mobileSearchInputRef.current?.focus();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const handleCopyCode = (code: string) => {
     navigator.clipboard.writeText(code);
@@ -50,22 +67,144 @@ export const Header: React.FC<HeaderProps> = ({
   const [isScanning, setIsScanning] = useState(false);
   const [voiceText, setVoiceText] = useState("Tap 'Speak' and ask for groceries...");
   const [scanStatus, setScanStatus] = useState("Upload or drag a product photo to scan");
+  const [recognitionInstance, setRecognitionInstance] = useState<any>(null);
+
+  const startSpeechRecognition = () => {
+    const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    
+    if (!SpeechRecognitionAPI) {
+      setVoiceText(
+        language === "hi" 
+          ? "आपके ब्राउज़र में स्पीच रिकग्निशन समर्थित नहीं है। (सिम्युलेटिंग...)" 
+          : language === "es" 
+            ? "El reconocimiento de voz no es compatible con este navegador. (Simulando...)" 
+            : "Speech recognition not supported in this browser. (Simulating...)"
+      );
+      
+      // Graceful fallback simulation
+      setTimeout(() => {
+        setVoiceText(language === "hi" ? 'सिम्युलेट किया गया: "ताज़ा सेब"' : language === "es" ? 'Simulando: "manzana fresca"' : 'Simulated: "fresh apple"');
+      }, 1500);
+
+      setTimeout(() => {
+        setSearchTerm(language === "hi" ? "सेब" : language === "es" ? "manzana" : "apple");
+        setShowVoiceSearch(false);
+        setIsListening(false);
+      }, 3200);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognitionAPI();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = language === "hi" ? "hi-IN" : language === "es" ? "es-ES" : "en-IN";
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        setVoiceText(
+          language === "hi" 
+            ? "सुन रहा हूँ... कृपया बोलें!" 
+            : language === "es" 
+              ? "Escuchando... ¡hable ahora!" 
+              : "Listening... speak now!"
+        );
+      };
+
+      recognition.onresult = (event: any) => {
+        const transcript = Array.from(event.results)
+          .map((result: any) => result[0])
+          .map((result: any) => result.transcript)
+          .join("");
+        
+        setVoiceText(transcript || "...");
+        
+        const isFinal = event.results[0].isFinal;
+        if (isFinal) {
+          setTimeout(() => {
+            setSearchTerm(transcript.trim());
+            setShowVoiceSearch(false);
+            setIsListening(false);
+          }, 800);
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error("Speech recognition error", event);
+        if (event.error === "not-allowed") {
+          setVoiceText(
+            language === "hi" 
+              ? "माइक्रोफ़ोन अनुमति अस्वीकृत। कृपया माइक्रोफ़ोन की अनुमति दें।" 
+              : language === "es" 
+                ? "Permiso de micrófono denegado. Por favor, permita el acceso." 
+                : "Microphone permission denied. Please allow access."
+          );
+        } else {
+          setVoiceText(
+            language === "hi" 
+              ? `त्रुटि: ${event.error}। सिम्युलेटिंग...` 
+              : language === "es" 
+                ? `Error: ${event.error}. Simulando...` 
+                : `Error: ${event.error}. Simulating...`
+          );
+        }
+
+        // Simulating as fallback so user has high success rate inside frame
+        setTimeout(() => {
+          setVoiceText(language === "hi" ? 'सिम्युलेट किया गया: "ताज़ा केला"' : language === "es" ? 'Simulando: "plátano fresco"' : 'Simulated: "fresh banana"');
+        }, 2000);
+
+        setTimeout(() => {
+          setSearchTerm(language === "hi" ? "केला" : language === "es" ? "plátano" : "banana");
+          setShowVoiceSearch(false);
+          setIsListening(false);
+        }, 3800);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognition.start();
+      setRecognitionInstance(recognition);
+    } catch (err: any) {
+      console.error(err);
+      setVoiceText("Failed to initialize speech recognition.");
+      setIsListening(false);
+    }
+  };
 
   const triggerVoiceSearch = () => {
     setShowVoiceSearch(true);
-    setIsListening(true);
-    setVoiceText("Listening for groceries...");
-    
-    setTimeout(() => {
-      setVoiceText('Listening... "sweet apples"');
-    }, 1200);
-
-    setTimeout(() => {
-      setSearchTerm("apple");
-      setShowVoiceSearch(false);
-      setIsListening(false);
-    }, 2800);
+    setVoiceText(
+      language === "hi" 
+        ? "माइक्रोफ़ोन शुरू हो रहा है..." 
+        : language === "es" 
+          ? "Iniciando micrófono..." 
+          : "Initializing microphone..."
+    );
+    startSpeechRecognition();
   };
+
+  const cancelVoiceSearch = () => {
+    if (recognitionInstance) {
+      try {
+        recognitionInstance.abort();
+      } catch (e) {}
+    }
+    setShowVoiceSearch(false);
+    setIsListening(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (recognitionInstance) {
+        try {
+          recognitionInstance.abort();
+        } catch (e) {}
+      }
+    };
+  }, [recognitionInstance]);
 
   const handleImageScan = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -194,6 +333,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="relative">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-400" />
               <input
+                ref={searchInputRef}
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -210,6 +350,9 @@ export const Header: React.FC<HeaderProps> = ({
                   </button>
                 ) : (
                   <>
+                    <kbd className="hidden lg:inline-flex items-center justify-center px-1.5 py-0.5 bg-zinc-200/60 text-[9px] font-mono text-zinc-400 rounded border border-zinc-300/60 select-none font-bold">
+                      /
+                    </kbd>
                     <button 
                       onClick={triggerVoiceSearch}
                       className="text-zinc-400 hover:text-blue-600 p-1 rounded-full hover:bg-zinc-100 transition cursor-pointer"
@@ -403,86 +546,84 @@ export const Header: React.FC<HeaderProps> = ({
               )}
             </div>
 
-            {/* Quick Multi-Role Switcher (FOR GRADER CONVENIENCE) */}
-            <div className="relative">
-              <button
-                onClick={() => setShowRoleMenu(!showRoleMenu)}
-                className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl transition shadow-md shadow-blue-500/10 uppercase"
-              >
-                <Sliders className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">{currentViewRole}</span>
-              </button>
+            {/* Quick Multi-Role Switcher (ONLY for logged-in Admins to review layouts) */}
+            {user?.role === "admin" && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowRoleMenu(!showRoleMenu)}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl transition shadow-md shadow-blue-500/10 uppercase"
+                >
+                  <Sliders className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{currentViewRole}</span>
+                </button>
 
-              {showRoleMenu && (
-                <div className="absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-2xl border border-zinc-100 p-2 z-50">
-                  <p className="text-[10px] font-black text-zinc-400 px-3 py-1.5 uppercase tracking-wider">Test Platform Roles</p>
-                  
-                  <button
-                    onClick={() => {
-                      setViewRole("customer");
-                      loginAs("palsubhajit2005tq@gmail.com", "customer");
-                      setShowRoleMenu(false);
-                    }}
-                    className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-xl text-left transition ${
-                      currentViewRole === "customer" 
-                        ? "bg-blue-600 text-white font-black" 
-                        : "text-zinc-700 hover:bg-zinc-50"
-                    }`}
-                  >
-                    <User className="w-4 h-4 flex-shrink-0" />
-                    Customer Panel
-                  </button>
+                {showRoleMenu && (
+                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-2xl border border-zinc-100 p-2 z-50">
+                    <p className="text-[10px] font-black text-zinc-400 px-3 py-1.5 uppercase tracking-wider">Review Layouts</p>
+                    
+                    <button
+                      onClick={() => {
+                        setViewRole("customer");
+                        setShowRoleMenu(false);
+                      }}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-xl text-left transition ${
+                        currentViewRole === "customer" 
+                          ? "bg-blue-600 text-white font-black" 
+                          : "text-zinc-700 hover:bg-zinc-50"
+                      }`}
+                    >
+                      <User className="w-4 h-4 flex-shrink-0" />
+                      Customer Panel
+                    </button>
 
-                  <button
-                    onClick={() => {
-                      setViewRole("admin");
-                      loginAs("admin@quicknow.com", "admin");
-                      setShowRoleMenu(false);
-                    }}
-                    className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-xl text-left transition ${
-                      currentViewRole === "admin" 
-                        ? "bg-blue-600 text-white font-black" 
-                        : "text-zinc-700 hover:bg-zinc-50"
-                    }`}
-                  >
-                    <Shield className="w-4 h-4 flex-shrink-0" />
-                    Admin Portal
-                  </button>
+                    <button
+                      onClick={() => {
+                        setViewRole("admin");
+                        setShowRoleMenu(false);
+                      }}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-xl text-left transition ${
+                        currentViewRole === "admin" 
+                          ? "bg-blue-600 text-white font-black" 
+                          : "text-zinc-700 hover:bg-zinc-50"
+                      }`}
+                    >
+                      <Shield className="w-4 h-4 flex-shrink-0" />
+                      Admin Portal
+                    </button>
 
-                  <button
-                    onClick={() => {
-                      setViewRole("delivery");
-                      loginAs("rider@quicknow.com", "delivery");
-                      setShowRoleMenu(false);
-                    }}
-                    className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-xl text-left transition ${
-                      currentViewRole === "delivery" 
-                        ? "bg-blue-600 text-white font-black" 
-                        : "text-zinc-700 hover:bg-zinc-50"
-                    }`}
-                  >
-                    <Truck className="w-4 h-4 flex-shrink-0" />
-                    Rider Portal
-                  </button>
+                    <button
+                      onClick={() => {
+                        setViewRole("delivery");
+                        setShowRoleMenu(false);
+                      }}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-xl text-left transition ${
+                        currentViewRole === "delivery" 
+                          ? "bg-blue-600 text-white font-black" 
+                          : "text-zinc-700 hover:bg-zinc-50"
+                      }`}
+                    >
+                      <Truck className="w-4 h-4 flex-shrink-0" />
+                      Rider Portal
+                    </button>
 
-                  <button
-                    onClick={() => {
-                      setViewRole("seller");
-                      loginAs("seller@quicknow.com", "seller");
-                      setShowRoleMenu(false);
-                    }}
-                    className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-xl text-left transition ${
-                      currentViewRole === "seller" 
-                        ? "bg-blue-600 text-white font-black" 
-                        : "text-zinc-700 hover:bg-zinc-50"
-                    }`}
-                  >
-                    <Store className="w-4 h-4 flex-shrink-0" />
-                    Seller Portal
-                  </button>
-                </div>
-              )}
-            </div>
+                    <button
+                      onClick={() => {
+                        setViewRole("seller");
+                        setShowRoleMenu(false);
+                      }}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-xl text-left transition ${
+                        currentViewRole === "seller" 
+                          ? "bg-blue-600 text-white font-black" 
+                          : "text-zinc-700 hover:bg-zinc-50"
+                      }`}
+                    >
+                      <Store className="w-4 h-4 flex-shrink-0" />
+                      Seller Portal
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Wishlist */}
             <button
@@ -513,6 +654,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
           <input
+            ref={mobileSearchInputRef}
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -558,7 +700,7 @@ export const Header: React.FC<HeaderProps> = ({
             <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Listening in real-time...</p>
 
             <button
-              onClick={() => setShowVoiceSearch(false)}
+              onClick={cancelVoiceSearch}
               className="px-6 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-full text-xs font-black uppercase transition cursor-pointer"
             >
               Cancel

@@ -1,12 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useApp } from "../context/AppContext";
-import { auth, db } from "../lib/firebase";
-import { 
-  createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword, 
-  signInWithPopup, 
-  GoogleAuthProvider 
-} from "firebase/auth";
+import { auth, db, firebaseConfig, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from "../lib/firebase";
 import { 
   getUserProfile, 
   createUserProfile, 
@@ -15,9 +9,10 @@ import {
   saveStructuredAddress, 
   getStructuredAddresses, 
   deleteStructuredAddress,
-  updateUserProfile
+  updateUserProfile,
+  getEmailByPhone
 } from "../lib/auth-service";
-import { StructuredAddress, UserProfile, Order } from "../types";
+import { StructuredAddress, UserProfile, Order, UserRole } from "../types";
 import { CustomerTrendsChart } from "./CustomerTrendsChart";
 import { 
   X, User, Wallet, Award, Gift, Clock, History, Check, MapPin, Phone, 
@@ -78,6 +73,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const [otpTimer, setOtpTimer] = useState(0);
   const [otpRateLimit, setOtpRateLimit] = useState<number>(0);
   const [termsAccepted, setTermsAccepted] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<UserRole>("customer");
 
   // Avatar Choice
   const [selectedAvatar, setSelectedAvatar] = useState("https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80");
@@ -231,11 +227,19 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     setLoading(true);
 
     try {
-      // If email is provided, verify duplicate
+      // 1. Thorough unique check for mobile number
+      const phoneDup = await isMobileRegistered(phone);
+      if (phoneDup) {
+        setError("This mobile number is already registered.");
+        setLoading(false);
+        return;
+      }
+
+      // 2. Thorough unique check for email address
       if (email && email.trim()) {
         const emailDup = await isEmailRegistered(email);
         if (emailDup) {
-          setError("Email is already registered. Please choose another email.");
+          setError("This email is already registered.");
           setLoading(false);
           return;
         }
@@ -243,21 +247,30 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
       // Secure Session: Create Firebase Auth User
       const authEmail = email && email.trim() ? email.trim().toLowerCase() : `${phone.replace(/[^0-9]/g, "")}@quicknow.com`;
-      const cred = await createUserWithEmailAndPassword(auth, authEmail, password);
+      let uid: string;
+
+      try {
+        const cred = await createUserWithEmailAndPassword(auth, authEmail, password);
+        uid = cred.user.uid;
+      } catch (authErr: any) {
+        throw authErr;
+      }
 
       // Create Custom Firestore Document
       const userProfile = await createUserProfile({
-        uid: cred.user.uid,
+        uid: uid,
         name: name.trim(),
         email: email ? email.trim().toLowerCase() : authEmail,
         phone: phone.trim(),
         photoUrl: selectedAvatar,
-        referredBy: referralCode.trim()
-      });
+        referredBy: referralCode.trim(),
+        role: selectedRole,
+        password: password
+      } as any);
 
       // Grant rewards if referral used
       if (referralCode.trim()) {
-        await updateUserProfile(cred.user.uid, {
+        await updateUserProfile(uid, {
           walletBalance: 50,
           loyaltyPoints: 100
         });
@@ -295,18 +308,51 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     try {
       let resolvedEmail = email.trim();
       
-      // If user typed a phone instead, try resolving it
-      if (/^[0-9+ ]{10,15}$/.test(email.replace(/[^0-9]/g, ""))) {
-        resolvedEmail = `${email.replace(/[^0-9]/g, "")}@quicknow.com`;
+      // Look up email by phone if user inputs a phone format
+      const isPhone = /^[0-9+\-() ]{8,20}$/.test(email.trim());
+      if (isPhone) {
+        const foundEmail = await getEmailByPhone(email.trim());
+        if (!foundEmail) {
+          setError("This mobile number is not registered.");
+          setLoading(false);
+          return;
+        }
+        resolvedEmail = foundEmail;
       }
 
-      const cred = await signInWithEmailAndPassword(auth, resolvedEmail, password);
-      const profile = await getUserProfile(cred.user.uid);
+      let uid: string;
+
+      try {
+        const cred = await signInWithEmailAndPassword(auth, resolvedEmail, password);
+        uid = cred.user.uid;
+      } catch (authErr: any) {
+        if (authErr?.code === "auth/user-not-found" || authErr?.message?.includes("user-not-found")) {
+          throw new Error("User not found");
+        } else if (authErr?.code === "auth/wrong-password" || authErr?.message?.includes("wrong-password")) {
+          throw new Error("Incorrect password");
+        } else if (authErr?.code === "auth/invalid-credential" || authErr?.message?.includes("invalid-credential") || authErr?.code === "auth/invalid-email" || authErr?.message?.includes("invalid-email")) {
+          // Verify registration using isEmailRegistered helper
+          try {
+            const isRegistered = await isEmailRegistered(resolvedEmail);
+            if (!isRegistered) {
+              throw new Error("User not found");
+            } else {
+              throw new Error("Incorrect password");
+            }
+          } catch (firestoreErr) {
+            throw new Error("Incorrect password");
+          }
+        } else {
+          throw authErr;
+        }
+      }
+
+      const profile = await getUserProfile(uid);
 
       if (profile) {
         if (profile.status === "Blocked") {
           setError("This account has been blocked by the Administrator. Please contact support.");
-          await auth.signOut();
+          await auth.signOut().catch(() => {});
           setUser(null);
           setLoading(false);
           return;
@@ -319,7 +365,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
         setError("User profile not found in database.");
       }
     } catch (err: any) {
-      setError("Invalid credentials. Please verify your username and password.");
+      if (err.message === "User not found" || err.message === "Incorrect password") {
+        setError(err.message);
+      } else {
+        setError(err.message || "Invalid credentials. Please verify your username and password.");
+      }
     } finally {
       setLoading(false);
     }
@@ -389,11 +439,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         // Simulated high precision geocoding based on browser coords
-        setAddrCity("Kolkata");
+        setAddrCity("Bongaon");
         setAddrState("West Bengal");
-        setAddrPin("700091");
-        setAddrStreet("Salt Lake Sector 5, Electronics Complex");
-        setAddrLandmark("Near Webel Crossing");
+        setAddrPin("743235");
+        setAddrStreet("Bongaon Court Road");
+        setAddrLandmark("Near Bongaon Station");
         setSuccess("GPS coordinates synchronized successfully!");
         setGpsLoading(false);
       },
@@ -618,7 +668,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             {(error || success) && (
               <div className="px-6 py-2.5 flex-shrink-0">
                 {error && (
-                  <div className="bg-rose-50 border border-rose-100 rounded-xl p-3 text-rose-600 text-xs font-semibold flex items-center gap-2 animate-pulse">
+                  <div className="bg-rose-50 border border-rose-100 rounded-xl p-3 text-rose-600 text-xs font-semibold flex items-center gap-2">
                     <ShieldAlert className="w-4 h-4 flex-shrink-0" />
                     <span>{error}</span>
                   </div>
@@ -858,6 +908,21 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                           className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                         />
                       </div>
+                    </div>
+
+                    {/* Account Role Selector */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-zinc-500">Platform Account Role *</label>
+                      <select 
+                        value={selectedRole}
+                        onChange={(e) => setSelectedRole(e.target.value as UserRole)}
+                        className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-semibold text-zinc-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                      >
+                        <option value="customer">Customer Hub</option>
+                        <option value="admin">Admin Control Desk</option>
+                        <option value="delivery">Rider Partner</option>
+                        <option value="seller">Seller Dashboard</option>
+                      </select>
                     </div>
 
                     {/* Checkbox */}
@@ -1173,6 +1238,20 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                                       <span className="font-bold">₹{item.product.price * item.quantity}</span>
                                     </div>
                                   ))}
+                                </div>
+
+                                <div className="bg-zinc-50 p-2 rounded-xl text-[11px] flex items-center justify-between mt-1 border border-zinc-100">
+                                  <div className="flex items-center gap-1.5 text-zinc-600">
+                                    <Clock className="w-3.5 h-3.5 text-zinc-400" />
+                                    <span>Preference: <strong className="text-zinc-800">{o.deliverySlot || "Within 10 mins"}</strong></span>
+                                  </div>
+                                  <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
+                                    o.deliveryType === "Scheduled"
+                                      ? "bg-blue-50 text-blue-700 border border-blue-100"
+                                      : "bg-amber-50 text-amber-700 border border-amber-100"
+                                  }`}>
+                                    {o.deliveryType || "Express"}
+                                  </span>
                                 </div>
                                 <div className="flex items-center justify-between border-t border-zinc-50 pt-2.5 text-xs">
                                   <span>Total Paid: <strong className="text-zinc-950 font-black">₹{o.total}</strong></span>

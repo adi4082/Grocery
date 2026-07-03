@@ -454,6 +454,11 @@ export const SellerDashboard: React.FC = () => {
                     <span className="font-mono font-black text-xs text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md">
                       {o.id}
                     </span>
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ml-1.5 ${
+                      o.deliveryType === "Scheduled" ? "bg-purple-100 text-purple-700" : "bg-amber-100 text-amber-700"
+                    }`}>
+                      {o.deliverySlot || "Within 10 mins"}
+                    </span>
                     <p className="text-[10px] text-zinc-400 font-bold mt-1">Plural: {o.items.reduce((sum, i) => sum + i.quantity, 0)} items</p>
                   </div>
                   <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${

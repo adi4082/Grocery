@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 
 export const Categories: React.FC<{ onProductClick: (product: any) => void }> = ({ onProductClick }) => {
-  const { products } = useApp() as any;
+  const { products, customCategories = [] } = useApp() as any;
   const [searchParams, setSearchParams] = useSearchParams();
   
   const categoryParam = searchParams.get("category") || "";
@@ -27,15 +27,29 @@ export const Categories: React.FC<{ onProductClick: (product: any) => void }> = 
     setLocalSearch(searchParam);
   }, [searchParam]);
 
+  const categoryIconMap: Record<string, string> = {
+    'fruits-veg': '🥦',
+    'rice-grains': '🌾',
+    'pulses': '🫘',
+    'oil-ghee': '🛢️',
+    'spices': '🧂',
+    'dairy-eggs': '🥛',
+    'snacks-biscuits': '🍪',
+    'instant-food': '🍜',
+    'beverages': '🥤',
+    'sugar-bakery': '🍬',
+    'personal-care': '🧴',
+    'household': '🧼'
+  };
+
   const categories = [
     { id: "all", name: "All Products", icon: "🛒", color: "bg-zinc-100 text-zinc-800" },
-    { id: "fruits-veg", name: "Fruits & Vegetables", icon: "🥦", color: "bg-emerald-50 text-emerald-700" },
-    { id: "grocery-staples", name: "Grocery & Staples", icon: "🌾", color: "bg-amber-50 text-amber-700" },
-    { id: "dairy-bread", name: "Dairy & Morning Bread", icon: "🥛", color: "bg-blue-50 text-blue-700" },
-    { id: "snacks-munchies", name: "Snacks & Munchies", icon: "🍪", color: "bg-orange-50 text-orange-700" },
-    { id: "beverages", name: "Juices & Beverages", icon: "🧃", color: "bg-purple-50 text-purple-700" },
-    { id: "personal-care", name: "Personal Care", icon: "🧴", color: "bg-rose-50 text-rose-700" },
-    { id: "household", name: "Household Utilities", icon: "🧼", color: "bg-teal-50 text-teal-700" }
+    ...customCategories.map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      icon: categoryIconMap[c.id] || "📦",
+      color: c.color || "bg-zinc-50 text-zinc-700"
+    }))
   ];
 
   const subTags = ["All", "Organic", "Flash Sale", "Under ₹100", "Under ₹250", "Premium Sourced"];

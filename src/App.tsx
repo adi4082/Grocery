@@ -117,6 +117,26 @@ const MainAppContent: React.FC = () => {
   const [activeProductDetail, setActiveProductDetail] = useState<any | null>(null);
   const [activeTrackOrderId, setActiveTrackOrderId] = useState<string | null>(null);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeElement = document.activeElement;
+      const isInput = activeElement?.tagName === "INPUT" || activeElement?.tagName === "TEXTAREA" || activeElement?.getAttribute("contenteditable") === "true";
+      
+      if (e.key === "Escape") {
+        setCartDrawerOpen(false);
+        setActiveProductDetail(null);
+        setActiveTrackOrderId(null);
+        setShowLoginPrompt(false);
+        setProfileOpen(false);
+      } else if ((e.key === "c" || e.key === "C") && !isInput) {
+        e.preventDefault();
+        setCartDrawerOpen(prev => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   // Global search trigger from Header
   const handleGlobalSearch = React.useCallback((term: string) => {
     const currentParams = new URLSearchParams(location.search);
@@ -415,7 +435,7 @@ const MainAppContent: React.FC = () => {
           <div className="space-y-3">
             <p className="text-white font-black text-xs uppercase tracking-wider">Hyper-local Sectors</p>
             <ul className="space-y-1.5 text-zinc-500 text-[11px]">
-              <li>Sector 5, Salt Lake, Kolkata</li>
+              <li>Bongaon, North 24 Parganas, West Bengal</li>
               <li>New Town, Action Area 1 & 2</li>
               <li>Cyber City, Gurugram Phase 2</li>
               <li>Chanakyapuri, New Delhi</li>

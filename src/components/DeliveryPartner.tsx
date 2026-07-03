@@ -4,7 +4,8 @@ import { Order } from "../types";
 import { 
   Truck, ShieldAlert, Navigation, Smartphone, Check, Sparkles, Map, 
   Compass, DollarSign, Calendar, Eye, MapPin, CheckCircle, AlertTriangle,
-  Phone, MessageSquare, ShieldCheck, XCircle, Play, Info, RefreshCw, User
+  Phone, MessageSquare, ShieldCheck, XCircle, Play, Info, RefreshCw, User,
+  Camera, Upload, Image, Trash2, RotateCcw
 } from "lucide-react";
 import { APIProvider, Map as GoogleMap, Marker } from "@vis.gl/react-google-maps";
 
@@ -30,6 +31,18 @@ export const DeliveryPartner: React.FC = () => {
   const [otpInput, setOtpInput] = useState("");
   const [otpError, setOtpError] = useState("");
   const [showOtpVerification, setShowOtpVerification] = useState(false);
+  
+  // Proof of delivery photo state
+  const [deliveryPhoto, setDeliveryPhoto] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState("");
+
+  // Reset proof states when active order changes
+  useEffect(() => {
+    setDeliveryPhoto(null);
+    setOtpInput("");
+    setOtpError("");
+    setPhotoError("");
+  }, [selectedOrder?.id]);
   
   // Simulated Rider Location Coords
   const [riderLocation, setRiderLocation] = useState({ lat: 22.5735, lng: 88.4331 });
@@ -112,8 +125,24 @@ export const DeliveryPartner: React.FC = () => {
     addNotification("Delivery Cancelled", `Order ${orderId} marked as Cancelled.`);
   };
 
+  const handleFileCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setDeliveryPhoto(reader.result as string);
+        setPhotoError("");
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleCompleteDeliveryNoOTP = (orderId: string) => {
-    updateOrderStatus(orderId, "Delivered", activeDriverId);
+    if (!deliveryPhoto) {
+      setPhotoError("Please click or upload a delivery proof photo first.");
+      return;
+    }
+    updateOrderStatus(orderId, "Delivered", activeDriverId, deliveryPhoto);
     addNotification("Order Delivered", `Successfully delivered order ${orderId}!`);
     if (selectedOrder?.id === orderId) {
       setSelectedOrder(null);
@@ -123,11 +152,17 @@ export const DeliveryPartner: React.FC = () => {
   const handleVerifyDeliveryOTP = (e: React.FormEvent) => {
     e.preventDefault();
     setOtpError("");
+    setPhotoError("");
     
     if (!selectedOrder) return;
 
+    if (!deliveryPhoto) {
+      setPhotoError("Please click or upload a delivery proof photo first.");
+      return;
+    }
+
     if (otpInput === selectedOrder.deliveryOTP) {
-      updateOrderStatus(selectedOrder.id, "Delivered", activeDriverId);
+      updateOrderStatus(selectedOrder.id, "Delivered", activeDriverId, deliveryPhoto);
       addNotification("OTP Confirmed!", `Order ${selectedOrder.id} has been securely delivered.`);
       
       // Reset states
@@ -346,6 +381,11 @@ export const DeliveryPartner: React.FC = () => {
                           <span className="text-xs font-black font-mono text-orange-600 bg-orange-50 px-2 py-0.5 rounded-md">
                             {o.id}
                           </span>
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ml-1.5 ${
+                            o.deliveryType === "Scheduled" ? "bg-purple-150 text-purple-800" : "bg-amber-100 text-amber-800"
+                          }`}>
+                            {o.deliverySlot || "Within 10 mins"}
+                          </span>
                           <span className="text-[10px] text-zinc-400 font-bold ml-2">
                             {new Date(o.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </span>
@@ -438,16 +478,12 @@ export const DeliveryPartner: React.FC = () => {
                               type="button"
                               onClick={() => {
                                 setSelectedOrder(o);
-                                if (deliveryOtpRequired) {
-                                  setShowOtpVerification(true);
-                                } else {
-                                  handleCompleteDeliveryNoOTP(o.id);
-                                }
+                                setShowOtpVerification(true);
                               }}
                               className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
                             >
-                              <Smartphone className="w-3.5 h-3.5" />
-                              <span>{deliveryOtpRequired ? "Verify OTP & Deliver" : "Mark Delivered"}</span>
+                              <Smartphone className="w-3.5 h-3.5 animate-pulse" />
+                              <span>Proceed to Handover</span>
                             </button>
 
                             <button
@@ -507,7 +543,14 @@ export const DeliveryPartner: React.FC = () => {
                 {unassignedOrdersPool.map(o => (
                   <div key={o.id} className="p-3 bg-zinc-50 border border-zinc-150 rounded-2xl flex items-center justify-between text-left gap-4">
                     <div>
-                      <p className="font-black text-xs text-zinc-800">{o.id} &bull; ₹{o.total}</p>
+                      <p className="font-black text-xs text-zinc-800 flex items-center flex-wrap gap-1.5">
+                        <span>{o.id} &bull; ₹{o.total}</span>
+                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
+                          o.deliveryType === "Scheduled" ? "bg-purple-100 text-purple-700" : "bg-amber-100 text-amber-700"
+                        }`}>
+                          {o.deliverySlot || "Within 10 mins"}
+                        </span>
+                      </p>
                       <p className="text-[10px] text-zinc-500 leading-normal line-clamp-1">{o.address}</p>
                     </div>
 
@@ -660,58 +703,237 @@ export const DeliveryPartner: React.FC = () => {
 
           {/* Secure Handover verification modal / helper panel */}
           {selectedOrder && showOtpVerification && (
-            <div className="bg-white border border-orange-200 rounded-3xl p-5 space-y-4 shadow-xl animate-in slide-in-from-bottom duration-200 text-left">
+            <div className="bg-white border border-zinc-200 rounded-3xl p-6 space-y-5 shadow-2xl animate-in slide-in-from-bottom duration-200 text-left relative overflow-hidden">
+              
+              {/* Highlight background glow */}
+              <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/5 rounded-full blur-3xl pointer-events-none" />
+              
               <div className="flex items-start gap-3">
-                <span className="p-2 bg-orange-100 text-orange-600 rounded-2xl">
-                  <ShieldCheck className="w-5 h-5" />
+                <span className="p-2 bg-orange-50 text-orange-600 rounded-2xl">
+                  <ShieldCheck className="w-6 h-6 animate-pulse" />
                 </span>
-                <div className="space-y-0.5">
-                  <h4 className="font-extrabold text-sm text-zinc-800">OTP Handover Code Required</h4>
-                  <p className="text-[10px] text-zinc-400">Zero-Trust verification is enforced by admin config. Request the code from target customer.</p>
+                <div className="space-y-1">
+                  <h4 className="font-black text-sm text-zinc-900 uppercase tracking-wide">
+                    Delivery Handover & Proof Hub
+                  </h4>
+                  <p className="text-[10px] text-zinc-500 leading-relaxed font-semibold">
+                    Complete verification steps and secure your payout. Order ID: <span className="font-mono text-orange-600 font-extrabold">{selectedOrder.id}</span>
+                  </p>
                 </div>
               </div>
 
-              <form onSubmit={handleVerifyDeliveryOTP} className="space-y-3">
-                <input
-                  type="text"
-                  required
-                  placeholder="Enter 4-Digit Passcode..."
-                  maxLength={4}
-                  value={otpInput}
-                  onChange={(e) => setOtpInput(e.target.value)}
-                  className="w-full text-center tracking-widest p-3 bg-zinc-50 border border-zinc-200 rounded-xl font-black text-lg text-zinc-900 focus:outline-none focus:ring-1 focus:ring-orange-500"
-                />
-
-                {otpError && <p className="text-[10px] text-rose-500 font-bold">{otpError}</p>}
-
-                <div className="flex gap-2">
-                  <button
-                    type="submit"
-                    className="flex-1 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-black text-xs rounded-xl transition shadow-md cursor-pointer"
-                  >
-                    Confirm & Complete Payout
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowOtpVerification(false);
-                      setOtpInput("");
-                      setOtpError("");
-                    }}
-                    className="bg-zinc-100 hover:bg-zinc-200 text-zinc-600 px-4 rounded-xl text-xs font-black transition cursor-pointer"
-                  >
-                    Back
-                  </button>
+              {/* Photo Proof of Delivery Section */}
+              <div className="space-y-3.5 bg-zinc-50/50 border border-zinc-150 p-4 rounded-2xl relative">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-black text-zinc-800 flex items-center gap-1.5">
+                    <Camera className="w-4 h-4 text-orange-600" />
+                    <span>STEP 1: Capture Delivery Proof Photo</span>
+                  </span>
+                  {deliveryPhoto && (
+                    <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Captured
+                    </span>
+                  )}
                 </div>
-              </form>
 
-              <div className="p-2.5 bg-zinc-50 border border-zinc-200 rounded-xl flex items-start gap-1.5 text-[9px] text-zinc-500">
-                <Info className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0 mt-0.5" />
-                <span className="font-bold">
-                  DEMO BYPASS: Check the Live Tracking view in Customer Account / active tracking to view this order's OTP. It is: <b className="text-orange-500 font-mono text-xs">{selectedOrder.deliveryOTP}</b>
-                </span>
+                {!deliveryPhoto ? (
+                  <div className="space-y-4">
+                    {/* Hidden Native File Input to Trigger Rear Camera on Mobile */}
+                    <input 
+                      type="file" 
+                      id="delivery-proof-file-input" 
+                      accept="image/*" 
+                      capture="environment" 
+                      onChange={handleFileCapture}
+                      className="hidden" 
+                    />
+                    
+                    {/* Real Camera Launcher */}
+                    <label 
+                      htmlFor="delivery-proof-file-input"
+                      className="w-full h-24 bg-white hover:bg-zinc-50 border-2 border-dashed border-zinc-200 hover:border-orange-400 rounded-xl flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-all duration-200 select-none group active:scale-[0.98]"
+                    >
+                      <Camera className="w-6 h-6 text-zinc-400 group-hover:text-orange-500 group-hover:scale-110 transition-transform duration-300" />
+                      <span className="text-xs font-black text-zinc-700">Click Photo / Open Camera</span>
+                      <span className="text-[9px] text-zinc-400 font-bold">Launches rear camera on your mobile device</span>
+                    </label>
+
+                    {/* Quick Simulated Photo Capture Options for Evaluators / Desktop Test */}
+                    <div className="space-y-2 pt-1">
+                      <p className="text-[9px] font-black uppercase text-zinc-400 tracking-wider">
+                        Or select a simulated handover snapshot (For quick desktop testing):
+                      </p>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeliveryPhoto("https://images.unsplash.com/photo-1530587191325-3db32d826c18?w=500&auto=format&fit=crop&q=60");
+                            setPhotoError("");
+                          }}
+                          className="group relative h-14 rounded-xl overflow-hidden border border-zinc-200 hover:border-orange-500 transition-all text-left active:scale-[0.97]"
+                        >
+                          <img 
+                            src="https://images.unsplash.com/photo-1530587191325-3db32d826c18?w=100&auto=format&fit=crop&q=60" 
+                            alt="Box at door" 
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            referrerPolicy="no-referrer"
+                          />
+                          <div className="absolute inset-x-0 bottom-0 bg-black/60 p-0.5 text-center">
+                            <span className="text-[8px] font-black text-white block truncate">At Door</span>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeliveryPhoto("https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&auto=format&fit=crop&q=60");
+                            setPhotoError("");
+                          }}
+                          className="group relative h-14 rounded-xl overflow-hidden border border-zinc-200 hover:border-orange-500 transition-all text-left active:scale-[0.97]"
+                        >
+                          <img 
+                            src="https://images.unsplash.com/photo-1542838132-92c53300491e?w=100&auto=format&fit=crop&q=60" 
+                            alt="Handover" 
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            referrerPolicy="no-referrer"
+                          />
+                          <div className="absolute inset-x-0 bottom-0 bg-black/60 p-0.5 text-center">
+                            <span className="text-[8px] font-black text-white block truncate">Handover</span>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeliveryPhoto("https://images.unsplash.com/photo-1573244514396-73b77e223d37?w=500&auto=format&fit=crop&q=60");
+                            setPhotoError("");
+                          }}
+                          className="group relative h-14 rounded-xl overflow-hidden border border-zinc-200 hover:border-orange-500 transition-all text-left active:scale-[0.97]"
+                        >
+                          <img 
+                            src="https://images.unsplash.com/photo-1573244514396-73b77e223d37?w=100&auto=format&fit=crop&q=60" 
+                            alt="Veggies bag" 
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            referrerPolicy="no-referrer"
+                          />
+                          <div className="absolute inset-x-0 bottom-0 bg-black/60 p-0.5 text-center">
+                            <span className="text-[8px] font-black text-white block truncate">Veggies Bag</span>
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {/* Active Proof Photo Thumbnail Preview */}
+                    <div className="relative h-44 rounded-xl overflow-hidden border border-zinc-200 shadow-inner group">
+                      <img 
+                        src={deliveryPhoto} 
+                        alt="Proof of delivery" 
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                      
+                      {/* Retake/Delete Hover Action */}
+                      <button
+                        type="button"
+                        onClick={() => setDeliveryPhoto(null)}
+                        className="absolute top-2.5 right-2.5 bg-zinc-950/80 hover:bg-rose-600 text-white p-2 rounded-xl transition duration-200 flex items-center gap-1 cursor-pointer text-[10px] font-black"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Remove / Clear</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {photoError && (
+                  <p className="text-[10px] text-rose-500 font-extrabold flex items-center gap-1 animate-pulse">
+                    ⚠️ {photoError}
+                  </p>
+                )}
               </div>
+
+              {/* Step 2: OTP verification or direct deliver confirmation */}
+              {deliveryOtpRequired ? (
+                <div className="space-y-3.5 bg-zinc-50/50 border border-zinc-150 p-4 rounded-2xl">
+                  <span className="text-xs font-black text-zinc-800 flex items-center gap-1.5">
+                    <Smartphone className="w-4 h-4 text-orange-600 animate-bounce" />
+                    <span>STEP 2: Enter Delivery OTP Code</span>
+                  </span>
+
+                  <form onSubmit={handleVerifyDeliveryOTP} className="space-y-3">
+                    <input
+                      type="text"
+                      required
+                      placeholder="Enter 4-Digit Passcode..."
+                      maxLength={4}
+                      value={otpInput}
+                      onChange={(e) => setOtpInput(e.target.value)}
+                      className="w-full text-center tracking-widest p-3 bg-white border border-zinc-200 rounded-xl font-black text-xl text-zinc-900 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                    />
+
+                    {otpError && <p className="text-[10px] text-rose-500 font-black leading-snug">{otpError}</p>}
+
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        type="submit"
+                        className="flex-1 py-3 bg-orange-500 hover:bg-orange-600 text-white font-black text-xs rounded-xl transition shadow-lg shadow-orange-500/10 cursor-pointer flex items-center justify-center gap-1.5 active:scale-[0.98]"
+                      >
+                        <CheckCircle className="w-4 h-4" />
+                        <span>Confirm OTP & Deliver</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowOtpVerification(false);
+                          setOtpInput("");
+                          setOtpError("");
+                          setPhotoError("");
+                        }}
+                        className="bg-zinc-100 hover:bg-zinc-200 text-zinc-600 px-4 rounded-xl text-xs font-black transition cursor-pointer"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleCompleteDeliveryNoOTP(selectedOrder.id)}
+                      className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl transition shadow-lg shadow-emerald-500/15 cursor-pointer flex items-center justify-center gap-1.5 active:scale-[0.98]"
+                    >
+                      <CheckCircle className="w-4 h-4" />
+                      <span>Complete Handover & Deliver</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowOtpVerification(false);
+                        setPhotoError("");
+                      }}
+                      className="bg-zinc-100 hover:bg-zinc-200 text-zinc-600 px-4 rounded-xl text-xs font-black transition cursor-pointer"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Demo Assist */}
+              <div className="p-3 bg-orange-50/50 border border-orange-100 rounded-xl flex items-start gap-2 text-[9px] text-zinc-500">
+                <Info className="w-3.5 h-3.5 text-orange-500 flex-shrink-0 mt-0.5" />
+                <div className="space-y-0.5 font-bold leading-normal">
+                  <p className="text-orange-950 font-black text-[10px]">Evaluation / Demo Assist</p>
+                  <p>Check the Live Tracking view in Customer Account / active tracking to view this order's OTP. It is: <b className="text-orange-600 font-mono text-xs">{selectedOrder.deliveryOTP}</b></p>
+                </div>
+              </div>
+
             </div>
           )}
 

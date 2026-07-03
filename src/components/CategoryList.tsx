@@ -2,7 +2,8 @@ import React, { useRef } from "react";
 import { useApp } from "../context/AppContext";
 import { 
   Apple, Wheat, Egg, Cookie, CupSoda, Sparkles, Home, Layers,
-  Baby, Snowflake, HeartPulse, Activity, Laptop, ChevronLeft, ChevronRight, Eye
+  Baby, Snowflake, HeartPulse, Activity, Laptop, ChevronLeft, ChevronRight, Eye,
+  Droplets, Flame, Milk, Soup, Cake
 } from "lucide-react";
 
 interface CategoryListProps {
@@ -31,6 +32,11 @@ export const CategoryList: React.FC<CategoryListProps> = ({
       case "HeartPulse": return <HeartPulse className="w-5 h-5" />;
       case "Activity": return <Activity className="w-5 h-5" />;
       case "Laptop": return <Laptop className="w-5 h-5" />;
+      case "Droplets": return <Droplets className="w-5 h-5" />;
+      case "Flame": return <Flame className="w-5 h-5" />;
+      case "Milk": return <Milk className="w-5 h-5" />;
+      case "Soup": return <Soup className="w-5 h-5" />;
+      case "Cake": return <Cake className="w-5 h-5" />;
       default: return <Layers className="w-5 h-5" />;
     }
   };

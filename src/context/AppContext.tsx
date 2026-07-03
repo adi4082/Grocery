@@ -1,15 +1,14 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import { Product, PRODUCTS as INITIAL_PRODUCTS } from "../data/products";
-import { UserProfile, CartItem, Order, Coupon, UserRole, SupportTicket, Review, DeliveryChargeConfig, DeliveryZone, Banner, HomepageSection, Category } from "../types";
+import { UserProfile, CartItem, Order, Coupon, UserRole, SupportTicket, Review, DeliveryChargeConfig, DeliveryZone, Banner, HomepageSection, Category, StructuredAddress } from "../types";
 import { TRANSLATIONS, Language } from "../data/translations";
-import { auth, db } from "../lib/firebase";
-import { doc, onSnapshot, setDoc } from "firebase/firestore";
-import { onAuthStateChanged, signOut as firebaseSignOut } from "firebase/auth";
-import { getUserProfile } from "../lib/auth-service";
+import { auth, db, onAuthStateChanged, signOut as firebaseSignOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, cleanUndefined } from "../lib/firebase";
+import { doc, onSnapshot, setDoc, collection, query, where, updateDoc, getDoc } from "firebase/firestore";
+import { getUserProfile, updateUserProfile } from "../lib/auth-service";
 
 interface AppContextType {
   user: UserProfile | null;
-  loginAs: (email: string, role: UserRole, name?: string) => void;
+  loginAs: (email: string, role: UserRole, name?: string) => void | Promise<void>;
   logout: () => void;
   cart: CartItem[];
   setCart: React.Dispatch<React.SetStateAction<CartItem[]>>;
@@ -21,8 +20,16 @@ interface AppContextType {
   wishlist: string[];
   toggleWishlist: (productId: string) => void;
   orders: Order[];
-  placeOrder: (address: string, paymentMethod: "COD" | "UPI", couponCode?: string, deliveryNotes?: string) => Promise<Order>;
-  updateOrderStatus: (orderId: string, status: Order["status"], partnerId?: string | null) => Promise<void>;
+  placeOrder: (
+    address: string,
+    paymentMethod: "COD" | "UPI" | "Razorpay",
+    couponCode?: string,
+    deliveryNotes?: string,
+    razorpayDetails?: { orderId: string; paymentId: string; signature: string },
+    deliveryType?: "Express" | "Scheduled",
+    deliverySlot?: string
+  ) => Promise<Order>;
+  updateOrderStatus: (orderId: string, status: Order["status"], partnerId?: string | null, deliveryProofPhoto?: string) => Promise<void>;
   coupons: Coupon[];
   addCoupon: (coupon: Coupon) => void;
   updateCoupon: (code: string, updated: Partial<Coupon>) => void;
@@ -99,6 +106,7 @@ const DEFAULT_DELIVERY_CONFIG: DeliveryChargeConfig = {
   },
   zones: [
     { id: "zone-1", name: "Sector 5 Salt Lake", city: "Kolkata", lat: 22.5726, lng: 88.3639, radiusKm: 5, deliveryCharge: 15, isActive: true },
+    { id: "zone-3", name: "Bongaon", city: "Bongaon", lat: 23.0488, lng: 88.8263, radiusKm: 8, deliveryCharge: 10, isActive: true },
     { id: "zone-2", name: "Cyber City Phase 2", city: "Gurugram", lat: 28.4952, lng: 77.0894, radiusKm: 6, deliveryCharge: 30, isActive: true }
   ],
   googleMapsEnabled: true
@@ -106,17 +114,7 @@ const DEFAULT_DELIVERY_CONFIG: DeliveryChargeConfig = {
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // --- Core States ---
-  const [user, setUser] = useState<UserProfile | null>(() => {
-    const cached = localStorage.getItem("qn_user");
-    if (cached) {
-      try {
-        return JSON.parse(cached);
-      } catch (e) {
-        return null;
-      }
-    }
-    return null; // Start as Guest by default on first load!
-  });
+  const [user, setUser] = useState<UserProfile | null>(null);
 
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
   const [loginPromptReason, setLoginPromptReason] = useState("");
@@ -140,7 +138,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [products, setProducts] = useState<Product[]>(() => {
     const cached = localStorage.getItem("qn_products");
-    return cached ? JSON.parse(cached) : INITIAL_PRODUCTS;
+    if (cached) {
+      const cachedList: Product[] = JSON.parse(cached);
+      const initialIds = new Set(INITIAL_PRODUCTS.map(p => p.id));
+      const mergedList = [...INITIAL_PRODUCTS];
+      cachedList.forEach(p => {
+        if (!initialIds.has(p.id)) {
+          mergedList.push(p);
+        }
+      });
+      localStorage.setItem("qn_products", JSON.stringify(mergedList));
+      return mergedList;
+    }
+    return INITIAL_PRODUCTS;
   });
 
   const [coupons, setCoupons] = useState<Coupon[]>(() => {
@@ -201,38 +211,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [homepageSections, setHomepageSections] = useState<HomepageSection[]>(() => {
     const cached = localStorage.getItem("qn_homepage_sections");
-    if (cached) return JSON.parse(cached);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (parsed.some((s: any) => s.categoryId === 'pulses' || s.categoryId === 'rice-grains')) {
+        return parsed;
+      }
+    }
     return [
-      { id: 'sec-veg', title: 'Vegetables', categoryId: 'fruits-veg', isVisible: true, order: 1 },
-      { id: 'sec-fruits', title: 'Fruits', categoryId: 'fruits-veg', isVisible: true, order: 2 },
-      { id: 'sec-grocery', title: 'Grocery', categoryId: 'grocery-staples', isVisible: true, order: 3 },
-      { id: 'sec-rice', title: 'Rice', categoryId: 'grocery-staples', isVisible: true, order: 4 },
-      { id: 'sec-dal', title: 'Dal', categoryId: 'grocery-staples', isVisible: true, order: 5 },
-      { id: 'sec-oil', title: 'Oil', categoryId: 'grocery-staples', isVisible: true, order: 6 },
-      { id: 'sec-dairy', title: 'Dairy & Milk', categoryId: 'dairy-bread', isVisible: true, order: 7 },
-      { id: 'sec-snacks', title: 'Snacks', categoryId: 'snacks-munchies', isVisible: true, order: 8 },
+      { id: 'sec-fruits-veg', title: 'Fruits & Vegetables', categoryId: 'fruits-veg', isVisible: true, order: 1 },
+      { id: 'sec-rice-grains', title: 'Rice, Flour & Grains', categoryId: 'rice-grains', isVisible: true, order: 2 },
+      { id: 'sec-pulses', title: 'Pulses', categoryId: 'pulses', isVisible: true, order: 3 },
+      { id: 'sec-oil-ghee', title: 'Oil & Ghee', categoryId: 'oil-ghee', isVisible: true, order: 4 },
+      { id: 'sec-spices', title: 'Spices', categoryId: 'spices', isVisible: true, order: 5 },
+      { id: 'sec-dairy-eggs', title: 'Dairy & Eggs', categoryId: 'dairy-eggs', isVisible: true, order: 6 },
+      { id: 'sec-snacks-biscuits', title: 'Snacks & Biscuits', categoryId: 'snacks-biscuits', isVisible: true, order: 7 },
+      { id: 'sec-instant-food', title: 'Instant Food', categoryId: 'instant-food', isVisible: true, order: 8 },
       { id: 'sec-beverages', title: 'Beverages', categoryId: 'beverages', isVisible: true, order: 9 },
-      { id: 'sec-personal', title: 'Personal Care', categoryId: 'personal-care', isVisible: true, order: 10 },
-      { id: 'sec-household', title: 'Household & Essentials', categoryId: 'household', isVisible: true, order: 11 }
+      { id: 'sec-sugar-bakery', title: 'Sugar & Bakery', categoryId: 'sugar-bakery', isVisible: true, order: 10 }
     ];
   });
 
   const [customCategories, setCustomCategories] = useState<Category[]>(() => {
     const cached = localStorage.getItem("qn_custom_categories");
-    if (cached) return JSON.parse(cached);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (parsed.some((c: any) => c.id === 'pulses' || c.id === 'rice-grains')) {
+        return parsed;
+      }
+    }
     return [
       { id: 'fruits-veg', name: 'Fruits & Vegetables', icon: 'Apple', color: 'bg-emerald-50 text-emerald-600 border-emerald-100', order: 1 },
-      { id: 'grocery-staples', name: 'Grocery & Staples', icon: 'Wheat', color: 'bg-amber-50 text-amber-600 border-amber-100', order: 2 },
-      { id: 'dairy-bread', name: 'Dairy & Bread', icon: 'Egg', color: 'bg-sky-50 text-sky-600 border-sky-100', order: 3 },
-      { id: 'beverages', name: 'Beverages', icon: 'CupSoda', color: 'bg-purple-50 text-purple-600 border-purple-100', order: 4 },
-      { id: 'snacks-munchies', name: 'Snacks & Munchies', icon: 'Cookie', color: 'bg-orange-50 text-orange-600 border-orange-100', order: 5 },
-      { id: 'personal-care', name: 'Beauty & Care', icon: 'Sparkles', color: 'bg-pink-50 text-pink-600 border-pink-100', order: 6 },
-      { id: 'household', name: 'Household Essentials', icon: 'Home', color: 'bg-teal-50 text-teal-600 border-teal-100', order: 7 },
-      { id: 'baby-care', name: 'Baby Care', icon: 'Baby', color: 'bg-rose-50 text-rose-600 border-rose-100', order: 8 },
-      { id: 'frozen-food', name: 'Frozen Food', icon: 'Snowflake', color: 'bg-cyan-50 text-cyan-600 border-cyan-100', order: 9 },
-      { id: 'medicines', name: 'Medicines', icon: 'HeartPulse', color: 'bg-red-50 text-red-600 border-red-100', order: 10 },
-      { id: 'pet-care', name: 'Pet Care', icon: 'Activity', color: 'bg-indigo-50 text-indigo-600 border-indigo-100', order: 11 },
-      { id: 'electronics', name: 'Electronics', icon: 'Laptop', color: 'bg-violet-50 text-violet-600 border-violet-100', order: 12 }
+      { id: 'rice-grains', name: 'Rice, Flour & Grains', icon: 'Wheat', color: 'bg-amber-50 text-amber-600 border-amber-100', order: 2 },
+      { id: 'pulses', name: 'Pulses', icon: 'Egg', color: 'bg-orange-50 text-orange-600 border-orange-100', order: 3 },
+      { id: 'oil-ghee', name: 'Oil & Ghee', icon: 'Droplets', color: 'bg-yellow-50 text-yellow-600 border-yellow-100', order: 4 },
+      { id: 'spices', name: 'Spices', icon: 'Flame', color: 'bg-red-50 text-red-600 border-red-100', order: 5 },
+      { id: 'dairy-eggs', name: 'Dairy & Eggs', icon: 'Milk', color: 'bg-sky-50 text-sky-600 border-sky-100', order: 6 },
+      { id: 'snacks-biscuits', name: 'Snacks & Biscuits', icon: 'Cookie', color: 'bg-amber-100 text-amber-700 border-amber-200', order: 7 },
+      { id: 'instant-food', name: 'Instant Food', icon: 'Soup', color: 'bg-rose-50 text-rose-600 border-rose-100', order: 8 },
+      { id: 'beverages', name: 'Beverages', icon: 'CupSoda', color: 'bg-purple-50 text-purple-600 border-purple-100', order: 9 },
+      { id: 'sugar-bakery', name: 'Sugar & Bakery', icon: 'Cake', color: 'bg-pink-50 text-pink-600 border-pink-100', order: 10 },
+      { id: 'personal-care', name: 'Beauty & Care', icon: 'Sparkles', color: 'bg-pink-50 text-pink-600 border-pink-100', order: 11 },
+      { id: 'household', name: 'Household Essentials', icon: 'Home', color: 'bg-teal-50 text-teal-600 border-teal-100', order: 12 }
     ];
   });
 
@@ -256,13 +275,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         total: 387,
         status: "Delivered",
         createdAt: "2026-06-30T18:45:00Z",
-        address: "12, Premium Park, Sector 5, Salt Lake, Kolkata",
+        address: "Bongaon, North 24 Parganas, West Bengal - 743235, India",
         paymentMethod: "UPI",
         paymentStatus: "Paid",
         deliveryOTP: "4821",
         deliveryPartnerId: "driver-1",
-        lat: 22.5735,
-        lng: 88.4331
+        lat: 23.0488,
+        lng: 88.8263
       },
       {
         id: "QN-1025",
@@ -279,13 +298,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         total: 429,
         status: "Pending",
         createdAt: new Date().toISOString(),
-        address: "12, Premium Park, Sector 5, Salt Lake, Kolkata",
+        address: "Bongaon, North 24 Parganas, West Bengal - 743235, India",
         paymentMethod: "COD",
         paymentStatus: "Pending",
         deliveryOTP: "1593",
         deliveryPartnerId: null,
-        lat: 22.5780,
-        lng: 88.4370
+        lat: 23.0492,
+        lng: 88.8270
       }
     ];
   });
@@ -430,26 +449,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Real-time sync for homepage sections from Firestore
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "homepage", "sections_config"), (snapshot) => {
+      const initialSections = [
+        { id: 'sec-fruits-veg', title: 'Fruits & Vegetables', categoryId: 'fruits-veg', isVisible: true, order: 1 },
+        { id: 'sec-rice-grains', title: 'Rice, Flour & Grains', categoryId: 'rice-grains', isVisible: true, order: 2 },
+        { id: 'sec-pulses', title: 'Pulses', categoryId: 'pulses', isVisible: true, order: 3 },
+        { id: 'sec-oil-ghee', title: 'Oil & Ghee', categoryId: 'oil-ghee', isVisible: true, order: 4 },
+        { id: 'sec-spices', title: 'Spices', categoryId: 'spices', isVisible: true, order: 5 },
+        { id: 'sec-dairy-eggs', title: 'Dairy & Eggs', categoryId: 'dairy-eggs', isVisible: true, order: 6 },
+        { id: 'sec-snacks-biscuits', title: 'Snacks & Biscuits', categoryId: 'snacks-biscuits', isVisible: true, order: 7 },
+        { id: 'sec-instant-food', title: 'Instant Food', categoryId: 'instant-food', isVisible: true, order: 8 },
+        { id: 'sec-beverages', title: 'Beverages', categoryId: 'beverages', isVisible: true, order: 9 },
+        { id: 'sec-sugar-bakery', title: 'Sugar & Bakery', categoryId: 'sugar-bakery', isVisible: true, order: 10 }
+      ];
+
       if (snapshot.exists()) {
         const data = snapshot.data();
         if (data && Array.isArray(data.list)) {
-          setHomepageSections(data.list);
-          localStorage.setItem("qn_homepage_sections", JSON.stringify(data.list));
+          const isOutdated = !data.list.some((s: any) => s.categoryId === "pulses" || s.categoryId === "rice-grains");
+          if (isOutdated) {
+            setHomepageSections(initialSections);
+            localStorage.setItem("qn_homepage_sections", JSON.stringify(initialSections));
+            setDoc(doc(db, "homepage", "sections_config"), { list: initialSections })
+              .catch(err => console.warn("Could not overwrite sections to firestore", err));
+          } else {
+            setHomepageSections(data.list);
+            localStorage.setItem("qn_homepage_sections", JSON.stringify(data.list));
+          }
         }
       } else {
-        const initialSections = [
-          { id: 'sec-veg', title: 'Vegetables', categoryId: 'fruits-veg', isVisible: true, order: 1 },
-          { id: 'sec-fruits', title: 'Fruits', categoryId: 'fruits-veg', isVisible: true, order: 2 },
-          { id: 'sec-grocery', title: 'Grocery', categoryId: 'grocery-staples', isVisible: true, order: 3 },
-          { id: 'sec-rice', title: 'Rice', categoryId: 'grocery-staples', isVisible: true, order: 4 },
-          { id: 'sec-dal', title: 'Dal', categoryId: 'grocery-staples', isVisible: true, order: 5 },
-          { id: 'sec-oil', title: 'Oil', categoryId: 'grocery-staples', isVisible: true, order: 6 },
-          { id: 'sec-dairy', title: 'Dairy & Milk', categoryId: 'dairy-bread', isVisible: true, order: 7 },
-          { id: 'sec-snacks', title: 'Snacks', categoryId: 'snacks-munchies', isVisible: true, order: 8 },
-          { id: 'sec-beverages', title: 'Beverages', categoryId: 'beverages', isVisible: true, order: 9 },
-          { id: 'sec-personal', title: 'Personal Care', categoryId: 'personal-care', isVisible: true, order: 10 },
-          { id: 'sec-household', title: 'Household & Essentials', categoryId: 'household', isVisible: true, order: 11 }
-        ];
+        setHomepageSections(initialSections);
+        localStorage.setItem("qn_homepage_sections", JSON.stringify(initialSections));
         setDoc(doc(db, "homepage", "sections_config"), { list: initialSections })
           .catch(err => console.warn("Could not seed sections to firestore", err));
       }
@@ -462,27 +491,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Real-time sync for categories from Firestore
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "homepage", "categories_config"), (snapshot) => {
+      const initialCats = [
+        { id: 'fruits-veg', name: 'Fruits & Vegetables', icon: 'Apple', color: 'bg-emerald-50 text-emerald-600 border-emerald-100', order: 1 },
+        { id: 'rice-grains', name: 'Rice, Flour & Grains', icon: 'Wheat', color: 'bg-amber-50 text-amber-600 border-amber-100', order: 2 },
+        { id: 'pulses', name: 'Pulses', icon: 'Egg', color: 'bg-orange-50 text-orange-600 border-orange-100', order: 3 },
+        { id: 'oil-ghee', name: 'Oil & Ghee', icon: 'Droplets', color: 'bg-yellow-50 text-yellow-600 border-yellow-100', order: 4 },
+        { id: 'spices', name: 'Spices', icon: 'Flame', color: 'bg-red-50 text-red-600 border-red-100', order: 5 },
+        { id: 'dairy-eggs', name: 'Dairy & Eggs', icon: 'Milk', color: 'bg-sky-50 text-sky-600 border-sky-100', order: 6 },
+        { id: 'snacks-biscuits', name: 'Snacks & Biscuits', icon: 'Cookie', color: 'bg-amber-100 text-amber-700 border-amber-200', order: 7 },
+        { id: 'instant-food', name: 'Instant Food', icon: 'Soup', color: 'bg-rose-50 text-rose-600 border-rose-100', order: 8 },
+        { id: 'beverages', name: 'Beverages', icon: 'CupSoda', color: 'bg-purple-50 text-purple-600 border-purple-100', order: 9 },
+        { id: 'sugar-bakery', name: 'Sugar & Bakery', icon: 'Cake', color: 'bg-pink-50 text-pink-600 border-pink-100', order: 10 },
+        { id: 'personal-care', name: 'Beauty & Care', icon: 'Sparkles', color: 'bg-pink-50 text-pink-600 border-pink-100', order: 11 },
+        { id: 'household', name: 'Household Essentials', icon: 'Home', color: 'bg-teal-50 text-teal-600 border-teal-100', order: 12 }
+      ];
+
       if (snapshot.exists()) {
         const data = snapshot.data();
         if (data && Array.isArray(data.list)) {
-          setCustomCategories(data.list);
-          localStorage.setItem("qn_custom_categories", JSON.stringify(data.list));
+          const isOutdated = !data.list.some((c: any) => c.id === "pulses" || c.id === "rice-grains");
+          if (isOutdated) {
+            setCustomCategories(initialCats);
+            localStorage.setItem("qn_custom_categories", JSON.stringify(initialCats));
+            setDoc(doc(db, "homepage", "categories_config"), { list: initialCats })
+              .catch(err => console.warn("Could not overwrite categories to firestore", err));
+          } else {
+            setCustomCategories(data.list);
+            localStorage.setItem("qn_custom_categories", JSON.stringify(data.list));
+          }
         }
       } else {
-        const initialCats = [
-          { id: 'fruits-veg', name: 'Fruits & Vegetables', icon: 'Apple', color: 'bg-emerald-50 text-emerald-600 border-emerald-100', order: 1 },
-          { id: 'grocery-staples', name: 'Grocery & Staples', icon: 'Wheat', color: 'bg-amber-50 text-amber-600 border-amber-100', order: 2 },
-          { id: 'dairy-bread', name: 'Dairy & Bread', icon: 'Egg', color: 'bg-sky-50 text-sky-600 border-sky-100', order: 3 },
-          { id: 'beverages', name: 'Beverages', icon: 'CupSoda', color: 'bg-purple-50 text-purple-600 border-purple-100', order: 4 },
-          { id: 'snacks-munchies', name: 'Snacks & Munchies', icon: 'Cookie', color: 'bg-orange-50 text-orange-600 border-orange-100', order: 5 },
-          { id: 'personal-care', name: 'Beauty & Care', icon: 'Sparkles', color: 'bg-pink-50 text-pink-600 border-pink-100', order: 6 },
-          { id: 'household', name: 'Household Essentials', icon: 'Home', color: 'bg-teal-50 text-teal-600 border-teal-100', order: 7 },
-          { id: 'baby-care', name: 'Baby Care', icon: 'Baby', color: 'bg-rose-50 text-rose-600 border-rose-100', order: 8 },
-          { id: 'frozen-food', name: 'Frozen Food', icon: 'Snowflake', color: 'bg-cyan-50 text-cyan-600 border-cyan-100', order: 9 },
-          { id: 'medicines', name: 'Medicines', icon: 'HeartPulse', color: 'bg-red-50 text-red-600 border-red-100', order: 10 },
-          { id: 'pet-care', name: 'Pet Care', icon: 'Activity', color: 'bg-indigo-50 text-indigo-600 border-indigo-100', order: 11 },
-          { id: 'electronics', name: 'Electronics', icon: 'Laptop', color: 'bg-violet-50 text-violet-600 border-violet-100', order: 12 }
-        ];
+        setCustomCategories(initialCats);
+        localStorage.setItem("qn_custom_categories", JSON.stringify(initialCats));
         setDoc(doc(db, "homepage", "categories_config"), { list: initialCats })
           .catch(err => console.warn("Could not seed categories to firestore", err));
       }
@@ -494,7 +534,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Recalculate active deliveryCharge based on current cart subtotal and user's primary address
   useEffect(() => {
-    const currentAddress = user?.addresses[0] || "12, Premium Park, Sector 5, Salt Lake, Kolkata";
+    const currentAddress = user?.addresses[0] || "Bongaon, North 24 Parganas, West Bengal - 743235, India";
     
     const getCartItemPrice = (item: any) => {
       if (item.product.isWeightBased) {
@@ -609,39 +649,145 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem("qn_reviews", JSON.stringify(reviews));
   }, [reviews]);
 
+  const setupSubscriptionsRef = useRef<((uid: string) => Promise<void>) | null>(null);
+
   // --- Firebase Authentication Sync ---
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        // Fetch full profile from Firestore
-        const profile = await getUserProfile(firebaseUser.uid);
-        if (profile) {
+    let unsubProfile: (() => void) | null = null;
+    let unsubAddresses: (() => void) | null = null;
+    let unsubOrders: (() => void) | null = null;
+
+    const setupSubscriptions = async (uid: string) => {
+      setupSubscriptionsRef.current = setupSubscriptions;
+      // Clear previous subscriptions to avoid duplicate listeners
+      if (unsubProfile) unsubProfile();
+      if (unsubAddresses) unsubAddresses();
+      if (unsubOrders) unsubOrders();
+
+      // 1. Subscribe to profile document
+      unsubProfile = onSnapshot(doc(db, "customers", uid), async (snap) => {
+        if (snap.exists()) {
+          const profile = snap.data() as UserProfile;
+          
+          // Auto-update address if it's the old default Salt Lake address or empty
+          if (!profile.addresses || profile.addresses.length === 0 || (profile.addresses[0] && profile.addresses[0].includes("Salt Lake"))) {
+            profile.addresses = ["Bongaon, North 24 Parganas, West Bengal - 743235, India"];
+            updateDoc(doc(db, "customers", uid), { addresses: profile.addresses }).catch(console.error);
+          }
+
+          // Instantly catch blocked status
+          if (profile.status === "Blocked") {
+            await firebaseSignOut(auth).catch(() => {});
+            setUser(null);
+            setOrders([]);
+            setCart([]);
+            setWishlist([]);
+            alert("Your account has been blocked by the Administrator.");
+            return;
+          }
           setUser(profile);
         } else {
           // Fallback if firestore document hasn't completed setup yet
           setUser({
-            uid: firebaseUser.uid,
-            email: firebaseUser.email || "",
-            name: firebaseUser.displayName || "Premium Customer",
-            phone: firebaseUser.phoneNumber || "",
+            uid: uid,
+            email: auth.currentUser?.email || "",
+            name: auth.currentUser?.displayName || "Premium Customer",
+            phone: auth.currentUser?.phoneNumber || "",
             role: "customer",
             walletBalance: 0,
             loyaltyPoints: 0,
             addresses: [],
             structuredAddresses: [],
-            referralCode: "QN_USER_" + firebaseUser.uid.substring(0, 5).toUpperCase(),
+            referralCode: "QN_USER_" + uid.substring(0, 5).toUpperCase(),
             recentlyViewed: []
           });
         }
+      }, (err) => {
+        console.error("Profile sync error:", err);
+      });
+
+      // 2. Subscribe to user structured addresses subcollection
+      unsubAddresses = onSnapshot(collection(db, "customers", uid, "addresses"), (snap) => {
+        const list: StructuredAddress[] = [];
+        snap.forEach((d) => {
+          list.push(d.data() as StructuredAddress);
+        });
+        setUser((prev: any) => {
+          if (!prev) return prev;
+          const simpleList = list.map(addr => 
+            `${addr.type}: ${addr.houseFlat}, ${addr.buildingName ? addr.buildingName + ", " : ""}${addr.streetArea}, ${addr.city}, ${addr.state} - ${addr.pinCode}`
+          );
+          return {
+            ...prev,
+            structuredAddresses: list,
+            addresses: simpleList
+          };
+        });
+      });
+
+      // 3. Subscribe to orders based on role (Admin vs Customer vs Delivery)
+      try {
+        const checkDoc = await getDoc(doc(db, "customers", uid));
+        const userRole = checkDoc.exists() ? checkDoc.data().role : "customer";
+
+        const ordersRef = collection(db, "orders");
+        let ordersQuery;
+        
+        if (userRole === "admin") {
+          ordersQuery = query(ordersRef);
+        } else if (userRole === "delivery") {
+          ordersQuery = query(ordersRef); // Delivery rider can view all orders to pick them up
+        } else {
+          // Customer can strictly view ONLY their own orders
+          ordersQuery = query(ordersRef, where("customerUid", "==", uid));
+        }
+
+        unsubOrders = onSnapshot(ordersQuery, (snap) => {
+          const orderList: Order[] = [];
+          snap.forEach((d) => {
+            const data = d.data() as Order;
+            orderList.push(data);
+          });
+          // Sort by creation date descending
+          orderList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          setOrders(orderList);
+        }, (err) => {
+          console.error("Orders sync error:", err);
+        });
+      } catch (e) {
+        console.error("Failed to fetch user role for order query setup:", e);
+      }
+    };
+
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        setupSubscriptions(firebaseUser.uid);
+      } else {
+        if (unsubProfile) { unsubProfile(); unsubProfile = null; }
+        if (unsubAddresses) { unsubAddresses(); unsubAddresses = null; }
+        if (unsubOrders) { unsubOrders(); unsubOrders = null; }
+
+        // Completely wipe all cached state variables to protect customer order privacy
+        setUser(null);
+        setOrders([]);
+        setCart([]);
+        setWishlist([]);
+        setActiveCoupon(null);
       }
     });
-    return () => unsubscribe();
+
+    return () => {
+      unsubscribe();
+      if (unsubProfile) unsubProfile();
+      if (unsubAddresses) unsubAddresses();
+      if (unsubOrders) unsubOrders();
+    };
   }, []);
 
-  // --- Sync with LocalStorage on State Changes ---
+  // Clear legacy qn_user to avoid sandbox session restore
   useEffect(() => {
-    localStorage.setItem("qn_user", JSON.stringify(user));
-  }, [user]);
+    localStorage.removeItem("qn_user");
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("qn_cart", JSON.stringify(cart));
@@ -669,25 +815,73 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   // --- Methods ---
-  const loginAs = (email: string, role: UserRole, name?: string) => {
-    firebaseSignOut(auth).catch(() => {});
+  const loginAs = async (email: string, role: UserRole, name?: string) => {
     let mockName = name || (role === "admin" ? "Admin Master" : role === "delivery" ? "Rider Captain" : role === "seller" ? "Fresh Farms Inc. (Seller)" : "Subhajit Pal");
     let mockPhone = role === "delivery" ? "+91 88888 77777" : role === "seller" ? "+91 77777 66666" : "+91 98765 43210";
-    
-    const newUser: UserProfile = {
-      uid: role === "admin" ? "admin-1" : role === "delivery" ? "driver-1" : role === "seller" ? "seller-1" : "cust-1",
-      email,
-      name: mockName,
-      phone: mockPhone,
-      role,
-      walletBalance: role === "customer" ? 500 : role === "seller" ? 14200 : 0,
-      loyaltyPoints: role === "customer" ? 150 : 0,
-      addresses: ["12, Premium Park, Sector 5, Salt Lake, Kolkata"],
-      referralCode: "QUICK_" + role.toUpperCase() + "_99",
-      recentlyViewed: []
-    };
-    setUser(newUser);
-    addNotification("Logged in successfully", `Welcome back, ${mockName}! Acting as ${role.toUpperCase()}.`);
+    const defaultPassword = "QuickNow123!";
+
+    try {
+      addNotification("Signing In...", "Authenticating with real Firebase session.");
+      
+      // Perform sign out first to ensure state clean slate
+      await firebaseSignOut(auth).catch(() => {});
+      
+      let userCredential;
+      try {
+        userCredential = await signInWithEmailAndPassword(auth, email, defaultPassword);
+      } catch (signInErr: any) {
+        if (
+          signInErr.code === "auth/user-not-found" || 
+          signInErr.message?.includes("user-not-found") || 
+          signInErr.code === "auth/invalid-credential" || 
+          signInErr.message?.includes("invalid-credential")
+        ) {
+          userCredential = await createUserWithEmailAndPassword(auth, email, defaultPassword);
+        } else {
+          throw signInErr;
+        }
+      }
+      const firebaseUser = userCredential.user;
+      const uid = firebaseUser.uid;
+
+      // Create/Update Firestore Document
+      const userDocRef = doc(db, "customers", uid);
+      const docSnap = await getDoc(userDocRef);
+
+      if (!docSnap.exists()) {
+        const referralCode = "QUICK_" + role.toUpperCase() + "_" + Math.floor(100 + Math.random() * 900);
+        const newUser: UserProfile = {
+          uid,
+          email,
+          name: mockName,
+          phone: mockPhone,
+          role,
+          walletBalance: role === "customer" ? 500 : role === "seller" ? 14200 : 0,
+          loyaltyPoints: role === "customer" ? 150 : 0,
+          addresses: ["Bongaon, North 24 Parganas, West Bengal - 743235, India"],
+          referralCode,
+          recentlyViewed: [],
+          customerId: "QN" + Math.floor(100000 + Math.random() * 900000),
+          createdAt: new Date().toISOString(),
+          lastLogin: new Date().toISOString(),
+          status: "Active",
+          orderCount: 0,
+          photoUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=60",
+          savedProducts: []
+        };
+        await setDoc(userDocRef, newUser);
+      } else {
+        await updateDoc(userDocRef, {
+          lastLogin: new Date().toISOString()
+        });
+      }
+
+      addNotification("Logged in successfully", `Welcome back, ${mockName}! Acting as ${role.toUpperCase()}.`);
+    } catch (err: any) {
+      console.error("loginAs real auth error:", err);
+      addNotification("Authentication Failed", err.message || "Failed to authenticate.");
+      throw err;
+    }
   };
 
   const logout = () => {
@@ -772,9 +966,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // --- Placing Order ---
   const placeOrder = async (
     address: string,
-    paymentMethod: "COD" | "UPI",
+    paymentMethod: "COD" | "UPI" | "Razorpay",
     couponCode?: string,
-    deliveryNotes?: string
+    deliveryNotes?: string,
+    razorpayDetails?: { orderId: string; paymentId: string; signature: string },
+    deliveryType?: "Express" | "Scheduled",
+    deliverySlot?: string
   ): Promise<Order> => {
     const getCartItemPrice = (item: any) => {
       if (item.product.isWeightBased) {
@@ -803,6 +1000,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const offsetLat = (Math.random() - 0.5) * 0.008;
         const offsetLng = (Math.random() - 0.5) * 0.008;
         return { lat: 22.5735 + offsetLat, lng: 88.4331 + offsetLng };
+      } else if (lower.includes("bongaon") || lower.includes("743235") || lower.includes("24 parganas")) {
+        const offsetLat = (Math.random() - 0.5) * 0.005;
+        const offsetLng = (Math.random() - 0.5) * 0.005;
+        return { lat: 23.0488 + offsetLat, lng: 88.8263 + offsetLng };
       } else if (lower.includes("cyber city") || lower.includes("gurugram") || lower.includes("gurgaon")) {
         return { lat: 28.4952 + (Math.random() - 0.5) * 0.005, lng: 77.0878 + (Math.random() - 0.5) * 0.005 };
       } else if (lower.includes("delhi") || lower.includes("connaught place")) {
@@ -817,11 +1018,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const coords = getCoordinatesForAddress(address);
 
-    const newOrder: Order = {
+    const newOrder: Order & { customerUid: string; customerEmail: string } = {
       id: "QN-" + Math.floor(1000 + Math.random() * 9000),
       customerId: user?.uid || "guest",
+      customerUid: user?.uid || "guest",
       customerName: user?.name || "Premium Customer",
       customerPhone: user?.phone || "+91 99999 88888",
+      customerEmail: user?.email || "",
       items: [...cart],
       subtotal,
       discount,
@@ -831,10 +1034,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString(),
       address,
       paymentMethod,
-      paymentStatus: paymentMethod === "UPI" ? "Paid" : "Pending",
+      paymentStatus: (paymentMethod === "UPI" || paymentMethod === "Razorpay") ? "Paid" : "Pending",
+      razorpayOrderId: razorpayDetails?.orderId,
+      razorpayPaymentId: razorpayDetails?.paymentId,
+      razorpaySignature: razorpayDetails?.signature,
       deliveryOTP: generatedOTP,
       deliveryPartnerId: null,
       deliveryNotes,
+      deliveryType,
+      deliverySlot,
       lat: coords.lat,
       lng: coords.lng
     };
@@ -851,23 +1059,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
     );
 
-    // Deduct wallet if Customer has enough balance? The user requested Cash On Delivery or UPI Payment, but wallet is there.
-    // If they pay via UPI we set paid. 
+    // Save order to Firestore orders/{orderId}
+    try {
+      await setDoc(doc(db, "orders", newOrder.id), cleanUndefined(newOrder));
+    } catch (e) {
+      console.error("Failed to write order to Firestore:", e);
+    }
 
-    // Update User loyalty points
+    // Update User loyalty points and order count inside Firestore
     if (user) {
       const addedPoints = Math.floor(finalTotal / 10); // 1 point for every ₹10 spent
+      const newLoyalty = user.loyaltyPoints + addedPoints;
+      const newOrderCount = (user.orderCount || 0) + 1;
+      
       setUser((prev) =>
         prev
           ? {
               ...prev,
-              loyaltyPoints: prev.loyaltyPoints + addedPoints,
+              loyaltyPoints: newLoyalty,
+              orderCount: newOrderCount
             }
           : null
       );
+
+      updateUserProfile(user.uid, {
+        loyaltyPoints: newLoyalty,
+        orderCount: newOrderCount
+      }).catch(console.error);
+    } else {
+      // Local state fallback for guest
+      setOrders((prev) => [newOrder as any, ...prev]);
     }
 
-    setOrders((prev) => [newOrder, ...prev]);
     setCart([]);
     setActiveCoupon(null);
 
@@ -876,27 +1099,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       `Order ${newOrder.id} has been created. A QuickNow rider is being assigned.`
     );
 
-    // Simulate Rider auto-acceptance for live order tracking demo after 5 seconds
-    setTimeout(() => {
-      setOrders((prevOrders) =>
-        prevOrders.map((o) => {
-          if (o.id === newOrder.id) {
-            addNotification("Rider Assigned", `Rider Captain is picking up your package for order ${o.id}!`);
-            return { ...o, status: "Accepted", deliveryPartnerId: "driver-1" };
-          }
-          return o;
-        })
-      );
+    // Simulate Rider auto-acceptance for live order tracking demo after 6 seconds
+    setTimeout(async () => {
+      try {
+        const orderRef = doc(db, "orders", newOrder.id);
+        const docSnap = await getDoc(orderRef);
+        if (docSnap.exists() && docSnap.data().status === "Pending") {
+          await updateDoc(orderRef, {
+            status: "Accepted",
+            deliveryPartnerId: "driver-1"
+          });
+          addNotification("Rider Assigned", `Rider Captain is picking up your package for order ${newOrder.id}!`);
+        }
+      } catch (err) {
+        console.error("Failed to update auto-assigned rider in Firestore:", err);
+      }
     }, 6000);
 
-    return newOrder;
+    return newOrder as any;
   };
 
   const updateOrderStatus = async (
     orderId: string,
     status: Order["status"],
-    partnerId?: string | null
+    partnerId?: string | null,
+    deliveryProofPhoto?: string
   ) => {
+    // Write state update directly to Firestore
+    try {
+      const orderRef = doc(db, "orders", orderId);
+      const updateData: any = { status };
+      if (partnerId !== undefined) {
+        updateData.deliveryPartnerId = partnerId;
+      }
+      if (status === "Delivered") {
+        updateData.paymentStatus = "Paid";
+        updateData.deliveredAt = new Date().toISOString();
+      }
+      if (deliveryProofPhoto !== undefined) {
+        updateData.deliveryProofPhoto = deliveryProofPhoto;
+      }
+      await updateDoc(orderRef, updateData);
+      addNotification(`Order status updated`, `Order ${orderId} is now: ${status.toUpperCase()}`);
+    } catch (e) {
+      console.error("Failed to update order status in Firestore:", e);
+    }
+
+    // Always update local state too to keep everything in sync instantly
     setOrders((prev) =>
       prev.map((o) => {
         if (o.id === orderId) {
@@ -906,13 +1155,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
           if (status === "Delivered") {
             updated.paymentStatus = "Paid";
+            updated.deliveredAt = new Date().toISOString();
+          }
+          if (deliveryProofPhoto !== undefined) {
+            updated.deliveryProofPhoto = deliveryProofPhoto;
           }
           return updated;
         }
         return o;
       })
     );
-    addNotification(`Order status updated`, `Order ${orderId} is now: ${status.toUpperCase()}`);
   };
 
   const updateDeliveryConfig = async (newConfig: DeliveryChargeConfig) => {

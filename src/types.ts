@@ -58,13 +58,20 @@ export interface Order {
   status: "Pending" | "Accepted" | "Picked Up" | "Out for Delivery" | "Delivered" | "Failed Delivery" | "Cancelled" | "Dispatched" | "Rejected";
   createdAt: string;
   address: string;
-  paymentMethod: "COD" | "UPI";
+  paymentMethod: "COD" | "UPI" | "Razorpay";
   paymentStatus: "Pending" | "Paid";
+  razorpayOrderId?: string;
+  razorpayPaymentId?: string;
+  razorpaySignature?: string;
   deliveryOTP: string;
   deliveryPartnerId: string | null;
   deliveryNotes?: string;
+  deliveryType?: "Express" | "Scheduled";
+  deliverySlot?: string;
   lat?: number;
   lng?: number;
+  deliveryProofPhoto?: string;
+  deliveredAt?: string;
 }
 
 export interface Coupon {

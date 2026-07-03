@@ -5,6 +5,7 @@ import {
   X, Star, Heart, Plus, Minus, ShieldCheck, Truck, RefreshCcw, 
   ShoppingBag, Play, ChevronDown, ChevronUp, Info 
 } from "lucide-react";
+import { ProductGalleryModal } from "./ProductGalleryModal";
 
 interface ProductDetailsProps {
   product: Product | null;
@@ -21,6 +22,7 @@ export const ProductDetails: React.FC<ProductDetailsProps> = ({
   const [showVideo, setShowVideo] = useState(false);
   const [qaOpenIdx, setQaOpenIdx] = useState<number | null>(null);
   const [customWeight, setCustomWeight] = useState<number>(product?.minWeight || 1);
+  const [showGallery, setShowGallery] = useState(false);
 
   useEffect(() => {
     if (product) {
@@ -148,12 +150,29 @@ export const ProductDetails: React.FC<ProductDetailsProps> = ({
                   </div>
                 ) : (
                   <>
-                    <img
-                      src={product.image}
-                      alt={product.name}
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
+                    <div 
+                      onClick={() => setShowGallery(true)}
+                      className="group relative w-full h-full cursor-zoom-in overflow-hidden flex items-center justify-center"
+                    >
+                      <img
+                        src={product.image}
+                        alt={product.name}
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                        referrerPolicy="no-referrer"
+                      />
+                      {/* Zoom overlay badge */}
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 duration-300">
+                        <span className="bg-white/95 backdrop-blur-md text-zinc-900 text-[10px] font-black uppercase tracking-wider px-3.5 py-2 rounded-full shadow-lg flex items-center gap-1.5 border border-zinc-200">
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                          </svg>
+                          Inspect Quality (Zoom)
+                        </span>
+                        <span className="text-[9px] text-white/90 font-bold tracking-tight mt-1 bg-black/40 px-2 py-0.5 rounded-md backdrop-blur-sm">
+                          Pinch / Drag to zoom macro details
+                        </span>
+                      </div>
+                    </div>
                     
                     {product.discount && product.discount > 0 && (
                       <span className="absolute top-4 left-4 bg-orange-500 text-white font-black text-xs px-3 py-1 rounded-full shadow-md">
@@ -636,6 +655,13 @@ export const ProductDetails: React.FC<ProductDetailsProps> = ({
                 </button>
               </div>
             </div>
+          )}
+
+          {showGallery && (
+            <ProductGalleryModal
+              product={product}
+              onClose={() => setShowGallery(false)}
+            />
           )}
 
         </div>

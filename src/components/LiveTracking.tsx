@@ -81,9 +81,16 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({
           {/* Quick Status banner */}
           <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 flex items-center justify-between">
             <div className="space-y-1">
-              <p className="text-[10px] font-black text-blue-700 uppercase tracking-wider">Estimated Delivery Time</p>
+              <p className="text-[10px] font-black text-blue-700 uppercase tracking-wider">
+                {order.deliveryType === "Scheduled" ? "Scheduled Delivery Window" : "Estimated Delivery Time"}
+              </p>
               <p className="text-base sm:text-lg font-black text-zinc-900">
-                {order.status === "Delivered" ? "Successfully Delivered!" : "Arriving in 8 - 10 minutes flat"}
+                {order.status === "Delivered" 
+                  ? "Successfully Delivered!" 
+                  : order.deliveryType === "Scheduled"
+                    ? order.deliverySlot || "Scheduled Delivery"
+                    : "Arriving in 8 - 10 minutes flat"
+                }
               </p>
             </div>
             <Clock className="w-8 h-8 text-blue-600 animate-pulse" />
@@ -99,6 +106,27 @@ export const LiveTracking: React.FC<LiveTrackingProps> = ({
               <div className="bg-amber-500 text-white font-mono font-black text-lg px-4 py-2 rounded-xl tracking-widest shadow-md shadow-amber-500/15">
                 {order.deliveryOTP}
               </div>
+            </div>
+          )}
+
+          {/* Proof of Delivery Photo */}
+          {order.status === "Delivered" && order.deliveryProofPhoto && (
+            <div className="bg-emerald-500/5 p-4 rounded-2xl border border-emerald-500/15 space-y-2.5">
+              <div className="flex items-center gap-1.5 text-[10px] font-black text-emerald-800 uppercase tracking-wider">
+                <CheckCircle2 className="w-4 h-4 text-emerald-650" />
+                <span>Proof of Delivery Photo</span>
+              </div>
+              <div className="relative h-48 rounded-xl overflow-hidden border border-zinc-150 shadow-inner bg-white">
+                <img 
+                  src={order.deliveryProofPhoto} 
+                  alt="Delivery Proof" 
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+              <p className="text-[9px] text-zinc-400 font-bold leading-normal">
+                Captured securely by your Rider Captain Ramesh Kumar upon safe handover.
+              </p>
             </div>
           )}
 

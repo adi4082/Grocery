@@ -11,15 +11,17 @@ import {
   ShieldAlert, TrendingUp, ShoppingBag, Users, AlertTriangle, Bell,
   Plus, Edit2, Trash2, Check, RefreshCw, Percent, DollarSign, ListFilter, X, Eye,
   Lock, Server, MessageSquare, Ticket, Key, CheckSquare, ShieldCheck, Download, Trash, UserX, Loader2, ShieldX, Search, Wallet, Award,
-  Compass, MapPin
+  Compass, MapPin, Camera, Activity
 } from "lucide-react";
 import { 
   getAllCustomers, 
   toggleCustomerStatus, 
   adminDeleteCustomer, 
   adminUpdateCustomerBalances,
-  updateUserProfile
+  updateUserProfile,
+  adminCreateSystemAccount
 } from "../lib/auth-service";
+import { DeliveryMetricsDashboard } from "./DeliveryMetricsDashboard";
 
 const GOOGLE_MAPS_API_KEY =
   process.env.GOOGLE_MAPS_PLATFORM_KEY ||
@@ -39,7 +41,7 @@ export const AdminPanel: React.FC = () => {
     deliveryOtpRequired, setDeliveryOtpRequired
   } = useApp() as any;
 
-  const [activeTab, setActiveTab] = useState<"dashboard" | "products" | "orders" | "coupons" | "crm_support" | "employee_roles" | "system_security" | "customers" | "delivery" | "homepage_design">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "delivery_metrics" | "products" | "orders" | "coupons" | "crm_support" | "employee_roles" | "system_security" | "customers" | "delivery" | "homepage_design">("dashboard");
   const [deliverySubTab, setDeliverySubTab] = useState<"pricing" | "fleet">("pricing");
 
   // --- Delivery Partner Fleet States ---
@@ -57,6 +59,7 @@ export const AdminPanel: React.FC = () => {
   const [customersLoading, setCustomersLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"All" | "Active" | "Blocked">("All");
+  const [selectedCustomerForOrders, setSelectedCustomerForOrders] = useState<UserProfile | null>(null);
 
   // Edit Customer Detail Modal states
   const [editingCustomer, setEditingCustomer] = useState<UserProfile | null>(null);
@@ -98,7 +101,7 @@ export const AdminPanel: React.FC = () => {
   };
 
   useEffect(() => {
-    if (activeTab === "customers") {
+    if (activeTab === "customers" || activeTab === "employee_roles") {
       loadCustomers();
     }
   }, [activeTab]);
@@ -328,6 +331,18 @@ export const AdminPanel: React.FC = () => {
     { id: "EMP-104", name: "Priya Patel", role: "Customer Support Executive", department: "CRM", status: "Active", permissions: ["crm"] },
     { id: "EMP-105", name: "Rajesh Kumar", role: "Delivery Partner", department: "Logistics", status: "Active", permissions: ["navigation"] }
   ]);
+
+  // Onboard system account states
+  const [showOnboardModal, setShowOnboardModal] = useState(false);
+  const [onboardName, setOnboardName] = useState("");
+  const [onboardEmail, setOnboardEmail] = useState("");
+  const [onboardPassword, setOnboardPassword] = useState("");
+  const [onboardPhone, setOnboardPhone] = useState("");
+  const [onboardRole, setOnboardRole] = useState<"customer" | "admin" | "delivery" | "seller">("delivery");
+  const [onboardWalletBalance, setOnboardWalletBalance] = useState("0");
+  const [onboardError, setOnboardError] = useState("");
+  const [onboardSuccess, setOnboardSuccess] = useState("");
+  const [onboardingLoading, setOnboardingLoading] = useState(false);
 
   // Audit Logs states
   const [auditLogs, setAuditLogs] = useState([
@@ -641,6 +656,7 @@ export const AdminPanel: React.FC = () => {
       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none border-b border-zinc-100">
         {[
           { id: "dashboard", label: "Overview Metrics", icon: TrendingUp },
+          { id: "delivery_metrics", label: "Delivery Metrics", icon: Activity },
           { id: "products", label: "Product Catalog", icon: ShoppingBag },
           { id: "orders", label: "Rider Orders", icon: ListFilter },
           { id: "delivery", label: "Delivery Charges", icon: Compass },
@@ -668,6 +684,13 @@ export const AdminPanel: React.FC = () => {
           );
         })}
       </div>
+
+      {/* VIEW: Delivery Metrics */}
+      {activeTab === "delivery_metrics" && (
+        <div className="space-y-6 animate-in fade-in duration-150">
+          <DeliveryMetricsDashboard orders={orders} fleetRiders={fleetRiders} />
+        </div>
+      )}
 
       {/* VIEW: Dashboard */}
       {activeTab === "dashboard" && (
@@ -1234,6 +1257,11 @@ export const AdminPanel: React.FC = () => {
                                 <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md uppercase bg-orange-100 text-orange-700">
                                   {o.status}
                                 </span>
+                                <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
+                                  o.deliveryType === "Scheduled" ? "bg-purple-100 text-purple-700" : "bg-amber-100 text-amber-700"
+                                }`}>
+                                  {o.deliverySlot || "Within 10 mins"}
+                                </span>
                                 <span className="text-[9px] font-mono text-zinc-400">{o.createdAt.substring(11, 16)}</span>
                               </div>
                               <p className="text-xs font-bold text-zinc-800">{o.customerName} &bull; {o.customerPhone}</p>
@@ -1573,7 +1601,14 @@ export const AdminPanel: React.FC = () => {
               <tbody className="divide-y divide-zinc-50">
                 {orders.map((o) => (
                   <tr key={o.id} className="hover:bg-zinc-50/50">
-                    <td className="p-4 font-extrabold text-zinc-900">{o.id}</td>
+                    <td className="p-4">
+                      <span className="font-extrabold text-zinc-900 block">{o.id}</span>
+                      <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md uppercase ${
+                        o.deliveryType === "Scheduled" ? "bg-purple-100 text-purple-700" : "bg-amber-100 text-amber-700"
+                      } mt-1 inline-block`}>
+                        {o.deliverySlot || "Within 10 mins"}
+                      </span>
+                    </td>
                     <td className="p-4">
                       <p className="font-bold text-zinc-800">{o.customerName}</p>
                       <p className="text-[10px] text-zinc-400">{o.customerPhone}</p>
@@ -1586,14 +1621,27 @@ export const AdminPanel: React.FC = () => {
                       {o.deliveryPartnerId || <span className="text-zinc-400 font-sans">Unassigned</span>}
                     </td>
                     <td className="p-4">
-                      <span className={`px-2.5 py-1 rounded-full font-black text-[10px] uppercase ${
-                        o.status === "Delivered" ? "bg-emerald-100 text-emerald-800" :
-                        o.status === "Out for Delivery" ? "bg-purple-100 text-purple-800 animate-pulse" :
-                        o.status === "Accepted" ? "bg-orange-100 text-orange-800" :
-                        "bg-amber-100 text-amber-800"
-                      }`}>
-                        {o.status}
-                      </span>
+                      <div className="flex flex-col gap-1.5 items-start">
+                        <span className={`px-2.5 py-1 rounded-full font-black text-[10px] uppercase ${
+                          o.status === "Delivered" ? "bg-emerald-100 text-emerald-800" :
+                          o.status === "Out for Delivery" ? "bg-purple-100 text-purple-800 animate-pulse" :
+                          o.status === "Accepted" ? "bg-orange-100 text-orange-800" :
+                          "bg-amber-100 text-amber-800"
+                        }`}>
+                          {o.status}
+                        </span>
+                        {o.status === "Delivered" && o.deliveryProofPhoto && (
+                          <a 
+                            href={o.deliveryProofPhoto} 
+                            target="_blank" 
+                            rel="noreferrer"
+                            className="group flex items-center gap-1 text-[9px] font-black text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100/50 px-1.5 py-0.5 rounded-md transition"
+                          >
+                            <Camera className="w-3 h-3" />
+                            <span>Proof Photo</span>
+                          </a>
+                        )}
+                      </div>
                     </td>
                     <td className="p-4 text-right space-x-2">
                       <select
@@ -1791,37 +1839,14 @@ export const AdminPanel: React.FC = () => {
                   <span className="w-2 h-4 bg-emerald-500 rounded-full" />
                   Staff Roster & Role Permission Management
                 </h3>
-                <p className="text-xs text-zinc-500">Configure department access, Super Admin elevations, and active session tokens.</p>
+                <p className="text-xs text-zinc-500 font-medium">Create delivery riders, admins, merchants, and assign direct dashboard authorization tokens.</p>
               </div>
               <button
-                onClick={() => {
-                  const name = prompt("Enter new employee name:");
-                  if (!name) return;
-                  const role = prompt("Enter role (Super Admin, Manager, Support, Rider):", "Support");
-                  if (!role) return;
-                  const newEmp = {
-                    id: "EMP-" + Math.floor(100 + Math.random() * 900),
-                    name,
-                    role,
-                    department: role === "Rider" ? "Logistics" : "Operations",
-                    status: "Active",
-                    permissions: ["crm"]
-                  };
-                  setEmployees([...employees, newEmp]);
-                  
-                  const newLog = {
-                    timestamp: new Date().toISOString(),
-                    actor: user?.name || "Admin Master",
-                    event: "Team Modification",
-                    description: `Added ${name} to team roster as ${role}.`,
-                    ip: "192.168.1.1"
-                  };
-                  setAuditLogs([newLog, ...auditLogs]);
-                }}
-                className="bg-zinc-950 hover:bg-zinc-850 text-white font-black text-xs px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
+                onClick={() => setShowOnboardModal(true)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-3.5 py-2.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer self-start sm:self-auto shadow-sm shadow-emerald-200"
               >
                 <Plus className="w-4 h-4" />
-                <span>Onboard Team Member</span>
+                <span>Onboard System Account</span>
               </button>
             </div>
 
@@ -1829,51 +1854,109 @@ export const AdminPanel: React.FC = () => {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-zinc-50 text-[10px] font-black text-zinc-400 uppercase border-b border-zinc-100">
-                    <th className="p-4">Employee ID</th>
+                    <th className="p-4">Employee ID / UID</th>
                     <th className="p-4">Name</th>
                     <th className="p-4">System Role</th>
                     <th className="p-4">Department</th>
-                    <th className="p-4">Status</th>
-                    <th className="p-4">Allowed System Permissions</th>
+                    <th className="p-4">Credentials & Info</th>
+                    <th className="p-4">Status & Type</th>
                     <th className="p-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="text-xs font-medium text-zinc-700 divide-y divide-zinc-50">
-                  {employees.map((emp) => (
-                    <tr key={emp.id} className="hover:bg-zinc-50/40">
-                      <td className="p-4 font-mono font-bold text-zinc-500">{emp.id}</td>
-                      <td className="p-4 font-extrabold text-zinc-900">{emp.name}</td>
+                  {/* Real Database Staff first */}
+                  {customers.filter(c => c.role !== "customer").map((emp) => (
+                    <tr key={emp.uid} className="hover:bg-zinc-50/40">
+                      <td className="p-4 font-mono font-bold text-zinc-500 select-all text-[11px]" title={emp.uid}>
+                        {emp.customerId || emp.uid.substring(0, 8).toUpperCase()}
+                      </td>
                       <td className="p-4">
-                        <span className="bg-zinc-100 text-zinc-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase">
+                        <div className="font-extrabold text-zinc-900">{emp.name}</div>
+                        <div className="text-[10px] text-zinc-400 font-bold">{emp.phone || "No phone"}</div>
+                      </td>
+                      <td className="p-4">
+                        <span className="bg-emerald-50 border border-emerald-100 text-emerald-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase">
                           {emp.role}
                         </span>
                       </td>
-                      <td className="p-4 text-zinc-500 font-bold">{emp.department}</td>
-                      <td className="p-4">
-                        <span className="flex items-center gap-1.5 text-emerald-600 font-bold">
-                          <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                          {emp.status}
-                        </span>
+                      <td className="p-4 text-zinc-550 font-bold">
+                        {emp.role === "admin" ? "Operations" : emp.role === "delivery" ? "Logistics" : emp.role === "seller" ? "Commerce" : "Operations"}
+                      </td>
+                      <td className="p-4 text-[11px] text-zinc-500">
+                        <div className="font-semibold text-zinc-700">{emp.email}</div>
+                        {emp.password && (
+                          <div className="font-mono text-zinc-400 text-[10px] mt-0.5">
+                            Pass: <span className="text-zinc-650 bg-zinc-100 px-1 py-0.2 rounded font-bold select-all">{emp.password}</span>
+                          </div>
+                        )}
                       </td>
                       <td className="p-4">
-                        <div className="flex flex-wrap gap-1">
-                          {emp.permissions.map((p) => (
-                            <span key={p} className="bg-emerald-50 text-emerald-700 text-[9px] font-bold px-1.5 py-0.5 rounded-md uppercase">
-                              {p}
-                            </span>
-                          ))}
+                        <div className="flex flex-col gap-1">
+                          <span className="flex items-center gap-1 text-emerald-600 font-bold">
+                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                            {emp.status || "Active"}
+                          </span>
+                          <span className="text-[9px] bg-zinc-950 text-white font-extrabold px-1.5 py-0.5 rounded-md uppercase self-start">
+                            Live Account
+                          </span>
                         </div>
                       </td>
-                      <td className="p-4 text-right text-zinc-400">
+                      <td className="p-4 text-right space-x-2">
+                        <button
+                          onClick={async () => {
+                            if (confirm(`Are you sure you want to delete this real database staff account: ${emp.name}?`)) {
+                              try {
+                                await adminDeleteCustomer(emp.uid);
+                                alert("Account deleted successfully from Firestore.");
+                                await loadCustomers();
+                              } catch (err) {
+                                alert("Failed to delete account from database.");
+                              }
+                            }
+                          }}
+                          className="text-xs text-rose-600 hover:underline font-extrabold cursor-pointer"
+                        >
+                          Delete Account
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+
+                  {/* Mock Employees */}
+                  {employees.map((emp) => (
+                    <tr key={emp.id} className="hover:bg-zinc-50/40 opacity-75">
+                      <td className="p-4 font-mono font-bold text-zinc-400">{emp.id}</td>
+                      <td className="p-4 font-extrabold text-zinc-600">{emp.name}</td>
+                      <td className="p-4">
+                        <span className="bg-zinc-100 text-zinc-600 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase">
+                          {emp.role}
+                        </span>
+                      </td>
+                      <td className="p-4 text-zinc-450 font-bold">{emp.department}</td>
+                      <td className="p-4 text-[10px] text-zinc-400">
+                        demo.{emp.name.toLowerCase().replace(/\s/g, "")}@quicknow.com
+                      </td>
+                      <td className="p-4">
+                        <div className="flex flex-col gap-1">
+                          <span className="flex items-center gap-1.5 text-zinc-500 font-bold">
+                            <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full" />
+                            {emp.status}
+                          </span>
+                          <span className="text-[9px] bg-zinc-100 text-zinc-500 font-bold px-1.5 py-0.5 rounded-md uppercase self-start">
+                            Demo Data
+                          </span>
+                        </div>
+                      </td>
+                      <td className="p-4 text-right">
                         <button
                           onClick={() => {
-                            const newPerms = prompt("Enter comma-separated permissions (e.g. crm, inventory, finances):", emp.permissions.join(","));
+                            const newPerms = prompt("Enter comma-separated permissions:", emp.permissions.join(","));
                             if (newPerms !== null) {
                               const permsArr = newPerms.split(",").map(p => p.trim()).filter(Boolean);
                               setEmployees(employees.map(e => e.id === emp.id ? { ...e, permissions: permsArr } : e));
                             }
                           }}
-                          className="text-xs text-emerald-600 hover:underline font-bold cursor-pointer"
+                          className="text-xs text-zinc-500 hover:underline font-bold cursor-pointer"
                         >
                           Modify Perms
                         </button>
@@ -1884,13 +1967,224 @@ export const AdminPanel: React.FC = () => {
               </table>
             </div>
           </div>
+
+          {/* Onboarding Modal */}
+          {showOnboardModal && (
+            <div className="fixed inset-0 bg-zinc-950/65 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-150">
+              <div className="bg-white rounded-3xl border border-zinc-100 p-6 sm:p-8 w-full max-w-lg shadow-2xl relative space-y-6 animate-in zoom-in-95 duration-150">
+                <button
+                  onClick={() => {
+                    setShowOnboardModal(false);
+                    setOnboardError("");
+                    setOnboardSuccess("");
+                  }}
+                  className="absolute top-4 right-4 p-2 text-zinc-400 hover:text-zinc-600 rounded-full hover:bg-zinc-100 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+
+                <div>
+                  <h3 className="font-extrabold text-lg text-zinc-950 uppercase tracking-wider flex items-center gap-2">
+                    <ShieldCheck className="w-5 h-5 text-emerald-500" />
+                    Onboard System Account
+                  </h3>
+                  <p className="text-xs text-zinc-500 mt-1 font-medium">
+                    Create a secure functional account directly registered in Firebase. Onboarded members can immediately log in to access their respective system panels.
+                  </p>
+                </div>
+
+                {onboardError && (
+                  <div className="bg-rose-50 border border-rose-100 text-rose-700 p-3.5 rounded-xl text-xs font-bold flex items-center gap-2 animate-shake">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0 text-rose-500" />
+                    <span>{onboardError}</span>
+                  </div>
+                )}
+
+                {onboardSuccess && (
+                  <div className="bg-emerald-50 border border-emerald-100 text-emerald-700 p-3.5 rounded-xl text-xs font-bold flex items-center gap-2">
+                    <Check className="w-4 h-4 flex-shrink-0 text-emerald-500 animate-bounce" />
+                    <span>{onboardSuccess}</span>
+                  </div>
+                )}
+
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    setOnboardError("");
+                    setOnboardSuccess("");
+
+                    if (!onboardName.trim() || !onboardEmail.trim() || !onboardPassword.trim() || !onboardPhone.trim()) {
+                      setOnboardError("Please fill out all required fields.");
+                      return;
+                    }
+
+                    if (onboardPassword.length < 6) {
+                      setOnboardError("Password must be at least 6 characters long.");
+                      return;
+                    }
+
+                    setOnboardingLoading(true);
+                    try {
+                      const balance = Number(onboardWalletBalance) || 0;
+                      const profile = await adminCreateSystemAccount(
+                        onboardEmail.trim(),
+                        onboardPassword,
+                        onboardName.trim(),
+                        onboardPhone.trim(),
+                        onboardRole,
+                        balance
+                      );
+
+                      setOnboardSuccess(`Successfully onboarded ${profile.name} as ${profile.role.toUpperCase()}!`);
+                      
+                      // Log event in audit logs
+                      const newLog = {
+                        timestamp: new Date().toISOString(),
+                        actor: user?.name || "Admin Master",
+                        event: "Staff Provisioned",
+                        description: `Registered new real system account: ${onboardName} (${onboardEmail}) with role ${onboardRole.toUpperCase()}.`,
+                        ip: "192.168.1.1"
+                      };
+                      setAuditLogs(prev => [newLog, ...prev]);
+
+                      // Refresh the database lists
+                      await loadCustomers();
+
+                      // Clear form fields
+                      setOnboardName("");
+                      setOnboardEmail("");
+                      setOnboardPassword("");
+                      setOnboardPhone("");
+                      setOnboardWalletBalance("0");
+
+                      // Auto close after 2 seconds
+                      setTimeout(() => {
+                        setShowOnboardModal(false);
+                        setOnboardSuccess("");
+                      }, 2000);
+                    } catch (err: any) {
+                      console.error("Onboarding failed:", err);
+                      setOnboardError(err?.message || "Registration failed. Email might already be in use.");
+                    } finally {
+                      setOnboardingLoading(false);
+                    }
+                  }}
+                  className="space-y-4"
+                >
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Full Name</label>
+                      <input
+                        type="text"
+                        required
+                        value={onboardName}
+                        onChange={(e) => setOnboardName(e.target.value)}
+                        placeholder="e.g. Captain Amit Sharma"
+                        className="w-full px-3.5 py-2.5 border border-zinc-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-zinc-900 bg-zinc-50"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Phone Number</label>
+                      <input
+                        type="tel"
+                        required
+                        value={onboardPhone}
+                        onChange={(e) => setOnboardPhone(e.target.value)}
+                        placeholder="e.g. +91 98765 12345"
+                        className="w-full px-3.5 py-2.5 border border-zinc-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-zinc-900 bg-zinc-50"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Email Address</label>
+                      <input
+                        type="email"
+                        required
+                        value={onboardEmail}
+                        onChange={(e) => setOnboardEmail(e.target.value)}
+                        placeholder="e.g. rider.amit@quicknow.com"
+                        className="w-full px-3.5 py-2.5 border border-zinc-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-zinc-900 bg-zinc-50"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Password</label>
+                      <input
+                        type="password"
+                        required
+                        value={onboardPassword}
+                        onChange={(e) => setOnboardPassword(e.target.value)}
+                        placeholder="At least 6 characters"
+                        className="w-full px-3.5 py-2.5 border border-zinc-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-zinc-900 bg-zinc-50"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-zinc-400">System Role</label>
+                      <select
+                        value={onboardRole}
+                        onChange={(e) => setOnboardRole(e.target.value as any)}
+                        className="w-full px-3.5 py-2.5 border border-zinc-200 rounded-xl text-xs font-black uppercase tracking-wider focus:outline-none focus:border-zinc-900 bg-zinc-50"
+                      >
+                        <option value="delivery">🚚 Delivery Rider</option>
+                        <option value="admin">🛡️ Admin Manager</option>
+                        <option value="seller">🥬 Fresh Seller</option>
+                        <option value="customer">👤 General Customer</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Starting Wallet Balance (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={onboardWalletBalance}
+                        onChange={(e) => setOnboardWalletBalance(e.target.value)}
+                        placeholder="e.g. 500"
+                        className="w-full px-3.5 py-2.5 border border-zinc-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-zinc-900 bg-zinc-50"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-4 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowOnboardModal(false)}
+                      className="flex-1 py-2.5 px-4 border border-zinc-200 text-zinc-700 font-extrabold text-xs rounded-xl hover:bg-zinc-50 transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={onboardingLoading}
+                      className="flex-1 py-2.5 px-4 bg-zinc-950 hover:bg-zinc-850 disabled:opacity-50 text-white font-extrabold text-xs rounded-xl transition flex items-center justify-center gap-2"
+                    >
+                      {onboardingLoading ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Creating Account...</span>
+                        </>
+                      ) : (
+                        <span>Register System Account</span>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* VIEW: Customer CRM Tab */}
       {activeTab === "customers" && (
         <div className="space-y-6">
-          <div className="bg-white rounded-3xl border border-zinc-100 p-6 space-y-4 shadow-sm">
+          <div className="bg-white rounded-3xl border border-zinc-100 p-6 space-y-6 shadow-sm">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
                 <h3 className="font-extrabold text-sm text-zinc-950 uppercase tracking-wider flex items-center gap-1.5">
@@ -1915,6 +2209,42 @@ export const AdminPanel: React.FC = () => {
                   <Download className="w-4 h-4" />
                   <span>Export Customer CRM Data</span>
                 </button>
+              </div>
+            </div>
+
+            {/* CRM Metrics Summary Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
+              <div className="bg-zinc-50 border border-zinc-100 p-4 rounded-2xl">
+                <p className="text-[9px] font-black uppercase text-zinc-400 tracking-wider">Total Customers</p>
+                <p className="text-lg font-black text-zinc-900 mt-1">{customers.length}</p>
+              </div>
+              <div className="bg-zinc-50 border border-zinc-100 p-4 rounded-2xl">
+                <p className="text-[9px] font-black uppercase text-zinc-400 tracking-wider">Active Customers</p>
+                <p className="text-lg font-black text-emerald-700 mt-1">
+                  {customers.filter(c => c.status !== "Blocked").length}
+                </p>
+              </div>
+              <div className="bg-zinc-50 border border-zinc-100 p-4 rounded-2xl">
+                <p className="text-[9px] font-black uppercase text-zinc-400 tracking-wider">Blocked Accounts</p>
+                <p className="text-lg font-black text-rose-600 mt-1">
+                  {customers.filter(c => c.status === "Blocked").length}
+                </p>
+              </div>
+              <div className="bg-zinc-50 border border-zinc-100 p-4 rounded-2xl">
+                <p className="text-[9px] font-black uppercase text-zinc-400 tracking-wider">Total Orders</p>
+                <p className="text-lg font-black text-indigo-700 mt-1">{orders.length}</p>
+              </div>
+              <div className="bg-zinc-50 border border-zinc-100 p-4 rounded-2xl">
+                <p className="text-[9px] font-black uppercase text-zinc-400 tracking-wider">Orders / Customer</p>
+                <p className="text-lg font-black text-zinc-900 mt-1">
+                  {customers.length > 0 ? (orders.length / customers.length).toFixed(1) : "0"}
+                </p>
+              </div>
+              <div className="bg-zinc-50 border border-zinc-100 p-4 rounded-2xl">
+                <p className="text-[9px] font-black uppercase text-zinc-400 tracking-wider">Avg Spend / Cust</p>
+                <p className="text-lg font-black text-zinc-900 mt-1">
+                  ₹{customers.length > 0 ? Math.round(orders.reduce((sum, o) => sum + (o.total || 0), 0) / customers.length) : 0}
+                </p>
               </div>
             </div>
 
@@ -1958,6 +2288,7 @@ export const AdminPanel: React.FC = () => {
                       <th className="py-3 px-4">Customer ID</th>
                       <th className="py-3 px-4">Profile</th>
                       <th className="py-3 px-4">Contact</th>
+                      <th className="py-3 px-4">Orders & Spend</th>
                       <th className="py-3 px-4">Wallet & Points</th>
                       <th className="py-3 px-4">Status</th>
                       <th className="py-3 px-4">Date Joined</th>
@@ -1981,62 +2312,78 @@ export const AdminPanel: React.FC = () => {
                         }
                         return true;
                       })
-                      .map((cust) => (
-                        <tr key={cust.uid} className="hover:bg-zinc-50/30 transition">
-                          <td className="py-3.5 px-4 font-black text-zinc-900">{cust.customerId || "QN001024"}</td>
-                          <td className="py-3.5 px-4">
-                            <div className="flex items-center gap-3">
-                              <img src={cust.photoUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&auto=format&fit=crop&q=80"} alt="" className="w-8 h-8 rounded-full object-cover border border-zinc-100" />
-                              <span className="font-extrabold text-zinc-900">{cust.name}</span>
-                            </div>
-                          </td>
-                          <td className="py-3.5 px-4 space-y-0.5">
-                            <span className="block font-semibold text-zinc-800">{cust.phone || "No Mobile"}</span>
-                            <span className="block text-[10px] text-zinc-400 font-medium">{cust.email}</span>
-                          </td>
-                          <td className="py-3.5 px-4 space-y-0.5">
-                            <span className="block text-emerald-700 font-extrabold">₹{cust.walletBalance || 0}</span>
-                            <span className="block text-[10px] text-zinc-400 font-semibold">{cust.loyaltyPoints || 0} Loyalty Pts</span>
-                          </td>
-                          <td className="py-3.5 px-4">
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${cust.status === "Blocked" ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"}`}>
-                              <span className={`w-1.5 h-1.5 rounded-full ${cust.status === "Blocked" ? "bg-rose-600" : "bg-emerald-500"}`} />
-                              {cust.status || "Active"}
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-4 text-zinc-400 font-bold">{cust.createdAt ? new Date(cust.createdAt).toLocaleDateString() : "01/07/2026"}</td>
-                          <td className="py-3.5 px-4 text-right space-x-1">
-                            <button
-                              onClick={() => {
-                                setEditingCustomer(cust);
-                                setEditedName(cust.name);
-                                setEditedEmail(cust.email);
-                                setEditedPhone(cust.phone);
-                                setEditedWallet(cust.walletBalance || 0);
-                                setEditedPoints(cust.loyaltyPoints || 0);
-                              }}
-                              className="p-1 text-zinc-400 hover:text-zinc-600 cursor-pointer transition inline-block"
-                              title="Edit Details"
-                            >
-                              <Edit2 className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleToggleBlock(cust)}
-                              className={`p-1 cursor-pointer transition inline-block ${cust.status === "Blocked" ? "text-emerald-500 hover:text-emerald-700" : "text-rose-500 hover:text-rose-700"}`}
-                              title={cust.status === "Blocked" ? "Unblock account" : "Block account"}
-                            >
-                              <Lock className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteCustomer(cust.uid)}
-                              className="p-1 text-zinc-400 hover:text-rose-600 cursor-pointer transition inline-block"
-                              title="Delete Profile"
-                            >
-                              <Trash className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      .map((cust) => {
+                        const custOrders = orders.filter(o => o.customerUid === cust.uid || o.customerId === cust.uid);
+                        const custSpend = custOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+                        
+                        return (
+                          <tr key={cust.uid} className="hover:bg-zinc-50/30 transition">
+                            <td className="py-3.5 px-4 font-black text-zinc-900">{cust.customerId || "QN001024"}</td>
+                            <td className="py-3.5 px-4">
+                              <div className="flex items-center gap-3">
+                                <img src={cust.photoUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&auto=format&fit=crop&q=80"} alt="" className="w-8 h-8 rounded-full object-cover border border-zinc-100" />
+                                <span className="font-extrabold text-zinc-900">{cust.name}</span>
+                              </div>
+                            </td>
+                            <td className="py-3.5 px-4 space-y-0.5">
+                              <span className="block font-semibold text-zinc-800">{cust.phone || "No Mobile"}</span>
+                              <span className="block text-[10px] text-zinc-400 font-medium">{cust.email}</span>
+                            </td>
+                            <td className="py-3.5 px-4 space-y-0.5">
+                              <span className="block font-extrabold text-zinc-950">{custOrders.length} orders</span>
+                              <span className="block text-[10px] text-zinc-400 font-bold">Spent: ₹{custSpend}</span>
+                            </td>
+                            <td className="py-3.5 px-4 space-y-0.5">
+                              <span className="block text-emerald-700 font-extrabold">₹{cust.walletBalance || 0}</span>
+                              <span className="block text-[10px] text-zinc-400 font-semibold">{cust.loyaltyPoints || 0} Loyalty Pts</span>
+                            </td>
+                            <td className="py-3.5 px-4">
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${cust.status === "Blocked" ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${cust.status === "Blocked" ? "bg-rose-600" : "bg-emerald-500"}`} />
+                                {cust.status || "Active"}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4 text-zinc-400 font-bold">{cust.createdAt ? new Date(cust.createdAt).toLocaleDateString() : "01/07/2026"}</td>
+                            <td className="py-3.5 px-4 text-right space-x-1">
+                              <button
+                                onClick={() => setSelectedCustomerForOrders(cust)}
+                                className="p-1 text-zinc-400 hover:text-indigo-600 cursor-pointer transition inline-block"
+                                title="View Past Orders"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingCustomer(cust);
+                                  setEditedName(cust.name);
+                                  setEditedEmail(cust.email);
+                                  setEditedPhone(cust.phone);
+                                  setEditedWallet(cust.walletBalance || 0);
+                                  setEditedPoints(cust.loyaltyPoints || 0);
+                                }}
+                                className="p-1 text-zinc-400 hover:text-zinc-600 cursor-pointer transition inline-block"
+                                title="Edit Details"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleToggleBlock(cust)}
+                                className={`p-1 cursor-pointer transition inline-block ${cust.status === "Blocked" ? "text-emerald-500 hover:text-emerald-700" : "text-rose-500 hover:text-rose-700"}`}
+                                title={cust.status === "Blocked" ? "Unblock account" : "Block account"}
+                              >
+                                <Lock className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteCustomer(cust.uid)}
+                                className="p-1 text-zinc-400 hover:text-rose-600 cursor-pointer transition inline-block"
+                                title="Delete Profile"
+                              >
+                                <Trash className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                   </tbody>
                 </table>
               </div>
@@ -2111,6 +2458,89 @@ export const AdminPanel: React.FC = () => {
                 Save updates to database
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: View Customer Orders History */}
+      {selectedCustomerForOrders && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div onClick={() => setSelectedCustomerForOrders(null)} className="fixed inset-0 bg-zinc-950/60 backdrop-blur-sm" />
+          <div className="bg-white rounded-3xl max-w-2xl w-full border border-zinc-100 shadow-2xl p-6 relative z-10 flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100 flex-shrink-0">
+              <div>
+                <h4 className="font-extrabold text-sm text-zinc-900 uppercase">
+                  Order History for {selectedCustomerForOrders.name}
+                </h4>
+                <p className="text-[10px] text-zinc-400 font-semibold uppercase mt-0.5">
+                  ID: {selectedCustomerForOrders.customerId || "N/A"} • Joined: {selectedCustomerForOrders.createdAt ? new Date(selectedCustomerForOrders.createdAt).toLocaleDateString() : "N/A"}
+                </p>
+              </div>
+              <button onClick={() => setSelectedCustomerForOrders(null)} className="text-zinc-400 hover:text-zinc-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto py-4 space-y-4 flex-1 pr-1">
+              {(() => {
+                const customerOrders = orders.filter(
+                  (o) => o.customerUid === selectedCustomerForOrders.uid || o.customerId === selectedCustomerForOrders.uid
+                );
+
+                if (customerOrders.length === 0) {
+                  return (
+                    <div className="text-center py-12 text-zinc-400">
+                      <p className="text-sm font-extrabold">No past orders found for this customer.</p>
+                      <p className="text-xs mt-1">Once this user places an order, it will appear here in real time.</p>
+                    </div>
+                  );
+                }
+
+                return customerOrders.map((order) => (
+                  <div key={order.id} className="border border-zinc-100 rounded-2xl p-4 bg-zinc-50/50 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-extrabold text-xs text-zinc-950">{order.id}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                        order.status === "Delivered" ? "bg-emerald-50 text-emerald-700" :
+                        order.status === "Cancelled" ? "bg-rose-50 text-rose-700" :
+                        "bg-amber-50 text-amber-700"
+                      }`}>
+                        {order.status}
+                      </span>
+                    </div>
+
+                    <div className="text-xs space-y-1">
+                      <p className="font-semibold text-zinc-600">Date: {new Date(order.createdAt).toLocaleString()}</p>
+                      <p className="font-semibold text-zinc-600">Address: {order.address}</p>
+                      <p className="font-semibold text-zinc-600">Payment: {order.paymentMethod} ({order.paymentStatus})</p>
+                    </div>
+
+                    <div className="border-t border-zinc-100 pt-2 space-y-1">
+                      {order.items.map((item, index) => (
+                        <div key={index} className="flex justify-between text-[11px] font-medium text-zinc-700">
+                          <span>{item.product.name} (x{item.quantity})</span>
+                          <span>₹{item.product.price * item.quantity}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="border-t border-zinc-100 pt-2 flex justify-between font-extrabold text-xs text-zinc-950">
+                      <span>Total Paid:</span>
+                      <span>₹{order.total}</span>
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+            
+            <div className="pt-3 border-t border-zinc-100 text-right flex-shrink-0">
+              <button
+                onClick={() => setSelectedCustomerForOrders(null)}
+                className="bg-zinc-900 hover:bg-zinc-950 text-white font-black text-xs px-4 py-2.5 rounded-xl cursor-pointer transition"
+              >
+                Close History
+              </button>
+            </div>
           </div>
         </div>
       )}

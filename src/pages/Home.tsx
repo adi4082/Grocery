@@ -100,20 +100,20 @@ export const Home: React.FC<HomeProps> = ({ onProductClick }) => {
     
     if (title.includes("vegetable")) {
       filtered = products.filter((p: any) => p.category === "fruits-veg" && 
-        /onion|potato|spinach|tomato|chilli|ginger|garlic|vegetable|mushroom|brocolli/i.test(p.name)
+        /onion|potato|spinach|tomato|chilli|ginger|garlic|vegetable|mushroom|brocolli|brinjal|cauliflower|cabbage|carrot|cucumber|coriander|lemon/i.test(p.name)
       );
     } else if (title.includes("fruit")) {
       filtered = products.filter((p: any) => p.category === "fruits-veg" && 
-        /apple|banana|avocado|orange|mango|kiwi|cherry|berry|grape/i.test(p.name)
+        /apple|banana|avocado|orange|mango|kiwi|cherry|berry|grape|papaya|guava/i.test(p.name)
       );
-    } else if (title.includes("rice")) {
-      filtered = products.filter((p: any) => p.category === "grocery-staples" && /rice/i.test(p.name));
-    } else if (title.includes("dal") || title.includes("lentil")) {
-      filtered = products.filter((p: any) => p.category === "grocery-staples" && /dal|lentil|pulse/i.test(p.name));
+    } else if (title.includes("rice") || title.includes("grain")) {
+      filtered = products.filter((p: any) => p.category === "rice-grains" || (p.category === "grocery-staples" && /rice/i.test(p.name)));
+    } else if (title.includes("dal") || title.includes("lentil") || title.includes("pulse")) {
+      filtered = products.filter((p: any) => p.category === "pulses" || (p.category === "grocery-staples" && /dal|lentil|pulse/i.test(p.name)));
     } else if (title.includes("oil") || title.includes("ghee")) {
-      filtered = products.filter((p: any) => p.category === "grocery-staples" && /oil|ghee/i.test(p.name));
-    } else if (title.includes("dairy") || title.includes("milk")) {
-      filtered = products.filter((p: any) => p.category === "dairy-bread" && /milk|butter|cheese|yogurt|paneer|curd/i.test(p.name));
+      filtered = products.filter((p: any) => p.category === "oil-ghee" || (p.category === "grocery-staples" && /oil|ghee/i.test(p.name)));
+    } else if (title.includes("dairy") || title.includes("milk") || title.includes("egg")) {
+      filtered = products.filter((p: any) => p.category === "dairy-eggs" || p.category === "dairy-bread");
     }
     
     return filtered.length > 0 ? filtered : products.filter((p: any) => p.category === cid).slice(0, 8);
@@ -301,7 +301,7 @@ export const Home: React.FC<HomeProps> = ({ onProductClick }) => {
           <div className="space-y-2 pt-2 text-xs font-semibold">
             <p className="flex items-center gap-2"><Phone className="w-4 h-4 text-amber-300" /> +91 98765 43210</p>
             <p className="flex items-center gap-2"><Mail className="w-4 h-4 text-amber-300" /> support@quicknow.com</p>
-            <p className="flex items-center gap-2"><MapPin className="w-4 h-4 text-amber-300" /> Sector 5, Salt Lake City, West Bengal</p>
+            <p className="flex items-center gap-2"><MapPin className="w-4 h-4 text-amber-300" /> Bongaon, North 24 Parganas, West Bengal</p>
           </div>
         </div>
 
