@@ -67,11 +67,15 @@ function getRazorpayClient(): any {
 // API: Get public Razorpay Key ID
 app.get("/api/razorpay-key", (req, res) => {
   const keyId = process.env.RAZORPAY_KEY_ID;
-  const isSandbox = !keyId || !process.env.RAZORPAY_KEY_SECRET;
-  res.json({ 
-    keyId: keyId || "rzp_test_sandbox_mode_active",
-    isSandbox: isSandbox
-  });
+  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+  
+  if (!keyId || !keySecret) {
+    return res.status(400).json({ 
+      error: "Razorpay Live credentials (RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET) are not configured on the server." 
+    });
+  }
+  
+  res.json({ keyId });
 });
 
 // API: Create a Razorpay Order
@@ -84,14 +88,10 @@ app.post("/api/razorpay/create-order", async (req, res) => {
 
     const keyId = process.env.RAZORPAY_KEY_ID;
     const keySecret = process.env.RAZORPAY_KEY_SECRET;
-    const isSandbox = !keyId || !keySecret;
 
-    if (isSandbox) {
-      return res.json({
-        orderId: `order_sandbox_${Math.random().toString(36).substring(2, 11)}`,
-        amount: Math.round(Number(amount) * 100),
-        currency: "INR",
-        isSandbox: true
+    if (!keyId || !keySecret) {
+      return res.status(400).json({ 
+        error: "Razorpay Live credentials are not configured on the server. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET." 
       });
     }
 
@@ -106,8 +106,7 @@ app.post("/api/razorpay/create-order", async (req, res) => {
     return res.json({
       orderId: order.id,
       amount: order.amount,
-      currency: order.currency,
-      isSandbox: false
+      currency: order.currency
     });
   } catch (error: any) {
     console.error("Error creating Razorpay order:", error);
@@ -124,8 +123,8 @@ app.post("/api/razorpay/verify-signature", async (req, res) => {
     }
 
     const keySecret = process.env.RAZORPAY_KEY_SECRET;
-    if (!keySecret || razorpay_order_id.startsWith("order_sandbox_")) {
-      return res.json({ status: "verified", isSandbox: true });
+    if (!keySecret) {
+      return res.status(500).json({ error: "Razorpay Live key secret is not configured on the server." });
     }
 
     const body = razorpay_order_id + "|" + razorpay_payment_id;

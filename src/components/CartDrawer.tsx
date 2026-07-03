@@ -98,9 +98,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const [showUPIScreen, setShowUPIScreen] = useState(false);
   const [upiStatus, setUpiStatus] = useState<"pending" | "success" | "failed">("pending");
 
-  // Razorpay Sandbox Simulator specific states
-  const [showRazorpaySimulator, setShowRazorpaySimulator] = useState(false);
-  const [simulatorOrder, setSimulatorOrder] = useState<any>(null);
+
 
   // Load Razorpay Standard Checkout Script Dynamically
   const loadRazorpayScript = () => {
@@ -176,70 +174,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     }
   };
 
-  const handleSimulateSuccess = async () => {
-    if (!simulatorOrder) return;
-    try {
-      setIsProcessing(true);
-      setLoadingMessage("Verifying secure payment signature (Sandbox)...");
-      setShowRazorpaySimulator(false);
-      
-      const response = {
-        razorpay_order_id: simulatorOrder.orderId,
-        razorpay_payment_id: `pay_sandbox_${Math.random().toString(36).substring(2, 11)}`,
-        razorpay_signature: "sandbox_signature_passed"
-      };
 
-      // Verify signature on backend
-      const verifyRes = await fetch("/api/razorpay/verify-signature", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(response)
-      });
-      
-      if (!verifyRes.ok) {
-        const errData = await verifyRes.json();
-        throw new Error(errData.error || "Payment signature verification failed.");
-      }
-      
-      setLoadingMessage("Securing payment & placing your order...");
-      
-      // Complete placement on Firestore
-      const placed = await placeOrder(
-        user?.addresses[0] || "Bongaon, North 24 Parganas, West Bengal - 743235, India",
-        "Razorpay",
-        activeCoupon?.code,
-        deliveryNotes,
-        {
-          orderId: response.razorpay_order_id,
-          paymentId: response.razorpay_payment_id,
-          signature: response.razorpay_signature
-        },
-        deliveryType,
-        selectedSlot
-      );
-      
-      // Show Successful state and redirect
-      setLoadingMessage("Payment Successful! 🎉");
-      setPaymentSuccessStatus(true);
-      
-      setTimeout(() => {
-        setIsProcessing(false);
-        setPaymentSuccessStatus(false);
-        onClose();
-        onOrderPlaced(placed.id);
-      }, 2000);
-      
-    } catch (err: any) {
-      console.error("Simulator Verification error:", err);
-      setPaymentError(err.message || "Payment signature verification failed.");
-      setIsProcessing(false);
-    }
-  };
-
-  const handleSimulateFailure = () => {
-    setShowRazorpaySimulator(false);
-    setPaymentError("Payment simulation failed or declined by user.");
-  };
 
   const handleCheckout = async () => {
     if (cart.length === 0) return;
@@ -250,35 +185,16 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       setLoadingMessage("Connecting to secure payment gateway...");
       
       try {
-        // 1. Fetch Razorpay Key ID and check sandbox status
+        // 1. Fetch Razorpay Key ID
         setLoadingMessage("Initializing gateway session...");
         const keyRes = await fetch("/api/razorpay-key");
-        if (!keyRes.ok) throw new Error("Could not retrieve payment gateway credentials.");
-        const { keyId, isSandbox } = await keyRes.json();
-        
-        if (isSandbox) {
-          // Create Order on Backend (Sandbox Mode)
-          setLoadingMessage("Creating secure order (Sandbox Mode)...");
-          const orderRes = await fetch("/api/razorpay/create-order", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              amount: finalTotal,
-              receipt: `receipt_qn_${Date.now()}`
-            })
-          });
-          if (!orderRes.ok) {
-            const errData = await orderRes.json();
-            throw new Error(errData.error || "Failed to initiate sandbox transaction.");
-          }
-          const rzpOrder = await orderRes.json();
-          setSimulatorOrder(rzpOrder);
-          setShowRazorpaySimulator(true);
-          setIsProcessing(false);
-          return;
+        if (!keyRes.ok) {
+          const errData = await keyRes.json();
+          throw new Error(errData.error || "Could not retrieve payment gateway credentials.");
         }
-
-        // 2. Load Razorpay SDK (Only for real checkout)
+        const { keyId } = await keyRes.json();
+        
+        // 2. Load Razorpay SDK
         const loaded = await loadRazorpayScript();
         if (!loaded) {
           throw new Error("Failed to load Razorpay payment SDK. Please check your internet connection.");
@@ -1079,104 +995,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         </div>
       )}
 
-      {/* --- Razorpay Simulated Sandbox Checkout Modal --- */}
-      {showRazorpaySimulator && simulatorOrder && (
-        <div className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 text-white rounded-2xl max-w-md w-full border border-slate-800 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            
-            {/* Razorpay Header */}
-            <div className="bg-slate-950 p-5 border-b border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-black text-white text-base shadow-md">
-                  R
-                </div>
-                <div>
-                  <h3 className="font-black text-sm tracking-wide text-zinc-100 flex items-center gap-1.5">
-                    Razorpay <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-black uppercase">Sandbox</span>
-                  </h3>
-                  <p className="text-[10px] text-zinc-400 font-bold">Trusted Payment Gateway</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Amount to Pay</p>
-                <p className="text-lg font-black text-blue-400">₹{finalTotal}</p>
-              </div>
-            </div>
 
-            {/* Sandbox Notice Banner */}
-            <div className="bg-amber-500/10 border-b border-amber-500/20 p-4 flex gap-3 text-left">
-              <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <p className="text-xs font-black text-amber-400">Environment Credentials Missing</p>
-                <p className="text-[10px] text-zinc-300 leading-normal">
-                  The deployed website is running in sandbox test mode because <code className="bg-slate-950/60 text-amber-300 px-1 rounded font-mono">RAZORPAY_KEY_ID</code> and <code className="bg-slate-950/60 text-amber-300 px-1 rounded font-mono">RAZORPAY_KEY_SECRET</code> secrets are not configured in your Cloud Run environment.
-                </p>
-              </div>
-            </div>
-
-            {/* Simulated Payment options */}
-            <div className="p-5 space-y-4">
-              <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800 space-y-1.5 text-xs text-left">
-                <div className="flex justify-between">
-                  <span className="text-zinc-400 font-bold">Order ID:</span>
-                  <span className="font-mono text-zinc-200">{simulatorOrder.orderId}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-zinc-400 font-bold">Billing Name:</span>
-                  <span className="text-zinc-200">{user?.name || "Premium Customer"}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-zinc-400 font-bold">Phone Number:</span>
-                  <span className="text-zinc-200 font-mono">{user?.phone || "+91 99999 88888"}</span>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400 text-left">Select Transaction Outcome:</p>
-                
-                {/* Successful Button */}
-                <button
-                  onClick={handleSimulateSuccess}
-                  className="w-full p-4 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white rounded-xl font-black text-xs uppercase flex items-center justify-between transition cursor-pointer shadow-lg shadow-emerald-950/20"
-                >
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-emerald-100" />
-                    <span>Authorize Successful Payment</span>
-                  </div>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-
-                {/* Decline Button */}
-                <button
-                  onClick={handleSimulateFailure}
-                  className="w-full p-3 bg-red-900/40 hover:bg-red-900/60 border border-red-800/40 text-red-200 rounded-xl font-bold text-xs flex items-center gap-2 justify-center transition cursor-pointer"
-                >
-                  <AlertCircle className="w-4 h-4 text-red-400" />
-                  <span>Simulate Payment Declined/Failed</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Footer with safety info */}
-            <div className="bg-slate-950 p-4 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-zinc-500 font-bold">
-              <div className="flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5 text-zinc-400" />
-                <span>SECURE SANDBOX TRANSACTION</span>
-              </div>
-              <button 
-                onClick={() => {
-                  setShowRazorpaySimulator(false);
-                  setPaymentError("Payment cancelled by the user.");
-                }} 
-                className="text-zinc-400 hover:text-zinc-200 cursor-pointer"
-              >
-                Cancel Checkout
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
 
     </div>
   );
